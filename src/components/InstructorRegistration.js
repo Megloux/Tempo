@@ -1,0 +1,387 @@
+import React, { useState, useEffect } from 'react';
+import { useClassSchedule } from '../context/ClassScheduleContext';
+
+const InstructorRegistration = () => {
+  const { CLASS_TYPES, DAYS_OF_WEEK, CLASS_TIMES, addInstructor } = useClassSchedule();
+  
+  // State for instructor self-registration
+  const [instructorForm, setInstructorForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    classTypes: [],
+    preferredDays: [],
+    preferredTimes: [],
+    unavailableDays: [],
+    unavailableTimes: [],
+    notes: ''
+  });
+  
+  // Initialize arrays to prevent undefined errors
+  useEffect(() => {
+    setInstructorForm(prev => ({
+      ...prev,
+      classTypes: prev.classTypes || [],
+      preferredDays: prev.preferredDays || [],
+      preferredTimes: prev.preferredTimes || [],
+      unavailableDays: prev.unavailableDays || [],
+      unavailableTimes: prev.unavailableTimes || []
+    }));
+  }, []);
+  
+  // Time slots for selection
+  const timeSlots = [
+    "Early Morning (5:30-7:00 AM)",
+    "Morning (7:00-9:00 AM)",
+    "Mid-Morning (9:00-12:00)",
+    "Lunch (12:00-2:00 PM)",
+    "Afternoon (2:00-4:00 PM)",
+    "Evening (4:00-6:00 PM)",
+    "Late Evening (6:00-8:00 PM)"
+  ];
+  
+  // Handle instructor self-registration form
+  const handleInstructorFormChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    
+    if (type === 'checkbox') {
+      // Extract the field name and item value from the checkbox name
+      // Format is fieldName-itemValue (e.g., classTypes-Lagree)
+      const parts = name.split('-');
+      const field = parts[0];
+      const item = parts.slice(1).join('-'); // Rejoin in case the item value itself contains hyphens
+      
+      setInstructorForm(prev => {
+        // Initialize the array if it doesn't exist
+        const currentArray = prev[field] || [];
+        
+        if (checked) {
+          // Add the item if it's not already in the array
+          return { ...prev, [field]: [...currentArray, item] };
+        } else {
+          // Remove the item from the array
+          return { ...prev, [field]: currentArray.filter(i => i !== item) };
+        }
+      });
+      
+      console.log(`Checkbox ${name} changed to ${checked}`);
+    } else {
+      setInstructorForm(prev => ({ ...prev, [name]: value }));
+    }
+  };
+  
+  // Submit instructor self-registration
+  const submitInstructorForm = () => {
+    if (!instructorForm.name || !instructorForm.email) {
+      alert('Name and email are required!');
+      return;
+    }
+    
+    // Generate a unique ID based on the instructor's name
+    const id = instructorForm.name
+      .split(' ')
+      .map(n => n[0]?.toUpperCase() || '')
+      .join('');
+    
+    // Convert instructor form data to the format expected by the system
+    const newInstructor = {
+      id,
+      name: instructorForm.name,
+      email: instructorForm.email,
+      phone: instructorForm.phone,
+      classTypes: instructorForm.classTypes,
+      blockSize: 2, // Default block size
+      minClasses: 2, // Default minimum classes
+      maxClasses: 10, // Default maximum classes
+      availability: {},
+      unavailability: {}
+    };
+    
+    // Process availability and unavailability data
+    const availabilitySlots = [];
+    const unavailabilitySlots = [];
+    
+    // Create a map of time ranges to specific time slots
+    const timeRangeMap = {
+      "Early Morning (5:30-7:00 AM)": ['5:30 AM', '6:00 AM', '6:30 AM'],
+      "Morning (7:00-9:00 AM)": ['7:00 AM', '7:30 AM', '8:00 AM', '8:30 AM'],
+      "Mid-Morning (9:00-12:00)": ['9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM'],
+      "Lunch (12:00-2:00 PM)": ['12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM'],
+      "Afternoon (2:00-4:00 PM)": ['2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM'],
+      "Evening (4:00-6:00 PM)": ['4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM'],
+      "Late Evening (6:00-8:00 PM)": ['6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM']
+    };
+    
+    // Process preferred days and times to create explicit availability slots
+    if (instructorForm.preferredDays && instructorForm.preferredDays.length > 0) {
+      // If they have preferred time ranges
+      if (instructorForm.preferredTimes && instructorForm.preferredTimes.length > 0) {
+        // For each preferred day
+        instructorForm.preferredDays.forEach(day => {
+          // For each preferred time range
+          instructorForm.preferredTimes.forEach(timeRange => {
+            // Get the specific time slots for this range
+            const timeSlots = timeRangeMap[timeRange] || [];
+            // Add each specific time slot as available
+            timeSlots.forEach(time => {
+              availabilitySlots.push(`${day}-${time}`);
+            });
+          });
+        });
+      } else {
+        // If no preferred times specified, assume all times on preferred days are available
+        instructorForm.preferredDays.forEach(day => {
+          CLASS_TIMES.forEach(time => {
+            availabilitySlots.push(`${day}-${time}`);
+          });
+        });
+      }
+    }
+    
+    // Process unavailable days (all time slots for these days)
+    if (instructorForm.unavailableDays && instructorForm.unavailableDays.length > 0) {
+      instructorForm.unavailableDays.forEach(day => {
+        CLASS_TIMES.forEach(time => {
+          unavailabilitySlots.push(`${day}-${time}`);
+          // Remove from availability if it was added
+          const slotIndex = availabilitySlots.indexOf(`${day}-${time}`);
+          if (slotIndex !== -1) {
+            availabilitySlots.splice(slotIndex, 1);
+          }
+        });
+      });
+    }
+    
+    // Process unavailable time ranges
+    if (instructorForm.unavailableTimes && instructorForm.unavailableTimes.length > 0) {
+      // For each unavailable time range
+      instructorForm.unavailableTimes.forEach(timeRange => {
+        // For all days (if not already marked as fully unavailable)
+        DAYS_OF_WEEK.forEach(day => {
+          if (!instructorForm.unavailableDays.includes(day)) {
+            // Add each specific time slot in the range
+            const timeSlots = timeRangeMap[timeRange] || [];
+            timeSlots.forEach(time => {
+              unavailabilitySlots.push(`${day}-${time}`);
+              // Remove from availability if it was added
+              const slotIndex = availabilitySlots.indexOf(`${day}-${time}`);
+              if (slotIndex !== -1) {
+                availabilitySlots.splice(slotIndex, 1);
+              }
+            });
+          }
+        });
+      });
+    }
+    
+    // Set the availability and unavailability slots
+    newInstructor.availability = availabilitySlots;
+    newInstructor.unavailability.slots = unavailabilitySlots;
+    
+    // Add notes if provided
+    if (instructorForm.notes) {
+      newInstructor.notes = instructorForm.notes;
+    }
+    
+    // Add the new instructor to the system
+    addInstructor(newInstructor);
+    
+    // Show success message
+    alert(`Thank you, ${instructorForm.name}! Your information has been submitted successfully.`);
+    
+    // Reset the form
+    setInstructorForm({
+      name: '',
+      email: '',
+      phone: '',
+      classTypes: [],
+      preferredDays: [],
+      preferredTimes: [],
+      unavailableDays: [],
+      unavailableTimes: [],
+      notes: ''
+    });
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-6 text-center text-blue-800">Instructor Registration Form</h2>
+      <p className="mb-6 text-gray-600">Please provide your information and teaching preferences to join our instructor team.</p>
+      
+      <div className="space-y-6">
+        {/* Personal Information Section */}
+        <div className="bg-gray-50 p-4 rounded-md">
+          <h3 className="text-lg font-semibold mb-4 text-blue-700">Personal Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Full Name:</label>
+              <input
+                type="text"
+                name="name"
+                value={instructorForm.name}
+                onChange={handleInstructorFormChange}
+                className="w-full p-2 border rounded"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Email:</label>
+              <input
+                type="email"
+                name="email"
+                value={instructorForm.email}
+                onChange={handleInstructorFormChange}
+                className="w-full p-2 border rounded"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Phone Number:</label>
+              <input
+                type="tel"
+                name="phone"
+                value={instructorForm.phone}
+                onChange={handleInstructorFormChange}
+                className="w-full p-2 border rounded"
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Class Types Section */}
+        <div className="bg-gray-50 p-4 rounded-md">
+          <h3 className="text-lg font-semibold mb-4 text-blue-700">Class Types</h3>
+          <p className="text-sm text-gray-600 mb-3">Select all class types you are qualified to teach:</p>
+          
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {CLASS_TYPES.map(type => (
+              <div key={type} className="flex items-center">
+                <input
+                  type="checkbox"
+                  id={`classTypes-${type}`}
+                  name={`classTypes-${type}`}
+                  checked={instructorForm.classTypes.includes(type)}
+                  onChange={handleInstructorFormChange}
+                  className="h-5 w-5 text-blue-600"
+                />
+                <label htmlFor={`classTypes-${type}`} className="ml-2 text-gray-700">{type}</label>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Availability Section */}
+        <div className="bg-gray-50 p-4 rounded-md">
+          <h3 className="text-lg font-semibold mb-4 text-blue-700">Availability</h3>
+          
+          {/* Days Available */}
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2">Which days are you available to teach?</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {DAYS_OF_WEEK.map(day => (
+                <div key={day} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id={`preferredDays-${day}`}
+                    name={`preferredDays-${day}`}
+                    checked={instructorForm.preferredDays.includes(day)}
+                    onChange={handleInstructorFormChange}
+                    className="h-5 w-5 text-blue-600"
+                  />
+                  <label htmlFor={`preferredDays-${day}`} className="ml-2 text-gray-700">{day}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Preferred Time Slots */}
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2">Preferred time slots:</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {["Morning (5:30-9:00 AM)", "Mid-Morning (9:00-12:00)", "Afternoon (12:00-4:00 PM)", "Evening (4:00-8:00 PM)"].map(timeSlot => (
+                <div key={timeSlot} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id={`preferredTimes-${timeSlot}`}
+                    name={`preferredTimes-${timeSlot}`}
+                    checked={instructorForm.preferredTimes.includes(timeSlot)}
+                    onChange={handleInstructorFormChange}
+                    className="h-5 w-5 text-blue-600"
+                  />
+                  <label htmlFor={`preferredTimes-${timeSlot}`} className="ml-2 text-gray-700 text-sm">{timeSlot}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Unavailable Days */}
+          <div className="mb-4">
+            <p className="text-sm font-medium mb-2">Please mark any days you are completely unavailable:</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {DAYS_OF_WEEK.map(day => (
+                <div key={day} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id={`unavailableDays-${day}`}
+                    name={`unavailableDays-${day}`}
+                    checked={instructorForm.unavailableDays.includes(day)}
+                    onChange={handleInstructorFormChange}
+                    className="h-5 w-5 text-red-600"
+                  />
+                  <label htmlFor={`unavailableDays-${day}`} className="ml-2 text-gray-700">{day}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Unavailable Time Slots */}
+          <div>
+            <p className="text-sm font-medium mb-2">Please mark any time slots you are completely unavailable:</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {timeSlots.map(timeSlot => (
+                <div key={timeSlot} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id={`unavailableTimes-${timeSlot}`}
+                    name={`unavailableTimes-${timeSlot}`}
+                    checked={instructorForm.unavailableTimes.includes(timeSlot)}
+                    onChange={handleInstructorFormChange}
+                    className="h-5 w-5 text-red-600"
+                  />
+                  <label htmlFor={`unavailableTimes-${timeSlot}`} className="ml-2 text-gray-700 text-sm">{timeSlot}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Additional Notes */}
+        <div className="bg-gray-50 p-4 rounded-md">
+          <h3 className="text-lg font-semibold mb-4 text-blue-700">Additional Information</h3>
+          <div>
+            <label className="block text-sm font-medium mb-1">Notes or special requests:</label>
+            <textarea
+              name="notes"
+              value={instructorForm.notes}
+              onChange={handleInstructorFormChange}
+              className="w-full p-2 border rounded h-24"
+              placeholder="Share any additional information about your scheduling needs, qualifications, etc."
+            ></textarea>
+          </div>
+        </div>
+        
+        {/* Submit Button */}
+        <div className="text-center">
+          <button 
+            onClick={submitInstructorForm}
+            className="bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Submit Registration
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default InstructorRegistration;
