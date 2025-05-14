@@ -75,10 +75,17 @@ const InstructorRegistration = () => {
     }
   };
   
-  // Submit instructor self-registration
+  // Submit instructor self-registration form
   const submitInstructorForm = () => {
+    // Validate required fields
     if (!instructorForm.name || !instructorForm.email) {
       alert('Name and email are required!');
+      return;
+    }
+    
+    // Validate at least one class type is selected
+    if (!instructorForm.classTypes || instructorForm.classTypes.length === 0) {
+      alert('Please select at least one class type you can teach.');
       return;
     }
     
@@ -239,23 +246,48 @@ const InstructorRegistration = () => {
     }
     
     // Add the new instructor to the system
-    addInstructor(newInstructor);
+    const instructorId = addInstructor(newInstructor);
     
-    // Show success message
-    alert(`Thank you, ${instructorForm.name}! Your information has been submitted successfully.`);
-    
-    // Reset the form
-    setInstructorForm({
-      name: '',
-      email: '',
-      phone: '',
-      classTypes: [],
-      preferredDays: [],
-      preferredTimes: [],
-      unavailableDays: [],
-      unavailableTimes: [],
-      notes: ''
-    });
+    if (instructorId) {
+      // Log success for debugging
+      console.log(`Instructor ${instructorForm.name} (ID: ${instructorId}) added successfully`);
+      console.log('Instructor data:', newInstructor);
+      
+      // Force a manual save to localStorage as an extra precaution
+      const currentInstructors = JSON.parse(localStorage.getItem('instructors') || '[]');
+      const updatedInstructors = [...currentInstructors, newInstructor];
+      localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
+      
+      // Show success message
+      alert(`Thank you, ${instructorForm.name}! Your information has been submitted successfully. Your instructor ID is: ${instructorId}`);
+      
+      // Reset the form
+      setInstructorForm({
+        name: '',
+        email: '',
+        phone: '',
+        classTypes: [],
+        preferredDays: [],
+        preferredTimes: [],
+        unavailableDays: [],
+        unavailableTimes: [],
+        notes: ''
+      });
+    } else {
+      // Handle registration failure
+      console.error('Failed to add instructor:', newInstructor);
+      alert('There was an error submitting your registration. Please try again or contact support.');
+      
+      // Still try to save to localStorage as a backup
+      try {
+        const currentInstructors = JSON.parse(localStorage.getItem('instructors') || '[]');
+        const updatedInstructors = [...currentInstructors, newInstructor];
+        localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
+        console.log('Saved instructor to localStorage as backup');
+      } catch (err) {
+        console.error('Failed to save instructor to localStorage:', err);
+      }
+    }
   };
 
   return (

@@ -758,10 +758,46 @@ export const ClassScheduleProvider = ({ children }) => {
 
   // Add a new instructor
   function addInstructor(instructor) {
-    // Validate instructor data before adding
-    const validatedInstructor = validateInstructorData(instructor);
-    setInstructors(prev => [...prev, validatedInstructor]);
-    return validatedInstructor.id; // Return the ID for reference
+    try {
+      // Save current state for history/undo
+      const currentInstructors = [...instructors];
+      saveToHistory('instructors', currentInstructors);
+      
+      // Validate instructor data before adding
+      const validatedInstructor = validateInstructorData(instructor);
+      
+      // Update instructors state
+      setInstructors(prev => [...prev, validatedInstructor]);
+      
+      // Immediately save to localStorage for backup
+      const updatedInstructors = [...instructors, validatedInstructor];
+      localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
+      
+      // Manually trigger Supabase save to ensure it's saved immediately
+      // This is important for registration data to persist
+      (async () => {
+        try {
+          const { error } = await supabase.from('instructors').upsert(
+            validatedInstructor,
+            { onConflict: 'id' }
+          );
+          
+          if (error) {
+            console.error('Error saving new instructor to Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Failed to save instructor to Supabase:', err);
+        }
+      })();
+      
+      // Clear any errors
+      setError(null);
+      
+      return validatedInstructor.id; // Return the ID for reference
+    } catch (err) {
+      console.error('Error adding instructor:', err);
+      return null;
+    }
   }
 
   // Update an existing instructor
