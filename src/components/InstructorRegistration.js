@@ -230,7 +230,7 @@ const InstructorRegistration = () => {
     // Set the availability and unavailability slots
     // IMPORTANT: Use the full availabilitySlots array to preserve ALL instructor availability
     newInstructor.availability = availabilitySlots;
-    newInstructor.classTypePreferences = syncedClassTypePreferences;
+    newInstructor.classTypePreferences = classTypePreferences;
     newInstructor.unavailability.slots = unavailabilitySlots;
     
     // Add notes if provided
