@@ -11,7 +11,8 @@ const InstructorManagement = () => {
     DAYS_OF_WEEK, 
     CLASS_TIMES, 
     setInstructorAvailability: updateInstructorAvailability,
-    getInstructorClasses
+    getInstructorClasses,
+    schedule
   } = useClassSchedule();
   
   const [selectedInstructor, setSelectedInstructor] = useState('');
@@ -20,6 +21,11 @@ const InstructorManagement = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState(null);
   const [instructorToDelete, setInstructorToDelete] = useState(null);
+  
+  // Helper function to check if a class is scheduled at a specific day, type, and time
+  const isClassScheduled = (day, type, time) => {
+    return schedule[day]?.[type]?.[time] !== undefined && schedule[day][type][time] !== null;
+  };
   
   // Load instructor's availability when selected
   const handleInstructorSelect = (instructorId) => {
@@ -30,11 +36,17 @@ const InstructorManagement = () => {
       if (instructor) {
         // Initialize availability grid with all slots unavailable by default
         const availabilityGrid = {};
+        // Initialize class type preferences grid
+        const classTypeGrid = {};
+        
         DAYS_OF_WEEK.forEach(day => {
           availabilityGrid[day] = {};
+          classTypeGrid[day] = {};
           CLASS_TIMES.forEach(time => {
             // Default to unavailable
             availabilityGrid[day][time] = false;
+            // Default to first class type the instructor can teach
+            classTypeGrid[day][time] = instructor.classTypes[0] || '';
           });
         });
         
@@ -45,18 +57,56 @@ const InstructorManagement = () => {
             const [day, time] = slot.split('-');
             if (availabilityGrid[day] && CLASS_TIMES.includes(time)) {
               availabilityGrid[day][time] = true;
+              
+              // Set class type preference if available
+              if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
+                classTypeGrid[day][time] = instructor.classTypePreferences[slot];
+              }
             }
           });
         } else if (instructor.unavailability && instructor.unavailability.slots) {
           // Fallback to using unavailability data if no explicit availability
           DAYS_OF_WEEK.forEach(day => {
             CLASS_TIMES.forEach(time => {
-              const isUnavailable = instructor.unavailability.slots.includes(`${day}-${time}`);
+              const slot = `${day}-${time}`;
+              const isUnavailable = instructor.unavailability.slots.includes(slot);
               availabilityGrid[day][time] = !isUnavailable;
+              
+              // Set class type preference if available
+              if (!isUnavailable && instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
+                classTypeGrid[day][time] = instructor.classTypePreferences[slot];
+              }
             });
           });
         }
+        
+        // Auto-check scheduled classes that match instructor's capabilities
+        DAYS_OF_WEEK.forEach(day => {
+          CLASS_TIMES.forEach(time => {
+            // Check if there's a class scheduled at this time
+            let hasMatchingClass = false;
+            let matchingClassType = '';
+            
+            // Check each class type
+            for (const type of CLASS_TYPES) {
+              // If the instructor can teach this class type and it's scheduled
+              if (instructor.classTypes.includes(type) && isClassScheduled(day, type, time)) {
+                hasMatchingClass = true;
+                matchingClassType = type;
+                break;
+              }
+            }
+            
+            // If there's a matching class, mark as available and set the class type
+            if (hasMatchingClass) {
+              availabilityGrid[day][time] = true;
+              classTypeGrid[day][time] = matchingClassType;
+            }
+          });
+        });
+        
         setInstructorAvailability(availabilityGrid);
+        setInstructorClassTypes(classTypeGrid);
       }
     }
   };
@@ -106,6 +156,24 @@ const InstructorManagement = () => {
     }));
   };
   
+  // Get class type color for checkboxes
+  const getClassTypeColor = (type) => {
+    switch(type) {
+      case 'Lagree':
+        return 'text-green-600 border-green-600';
+      case 'Boxing':
+        return 'text-red-600 border-red-600';
+      case 'Strength':
+        return 'text-blue-600 border-blue-600';
+      case 'Stretch':
+        return 'text-yellow-600 border-yellow-600';
+      case 'PT':
+        return 'text-purple-600 border-purple-600';
+      default:
+        return 'text-gray-600 border-gray-600';
+    }
+  };
+  
   // Save all availability changes at once
   const saveAvailability = () => {
     if (!selectedInstructor) return;
@@ -135,6 +203,32 @@ const InstructorManagement = () => {
     const instructor = instructors.find(i => i.id === selectedInstructor);
     if (!instructor) return;
     
+    // Sync with actual class schedule to ensure only scheduled classes are included
+    const syncedAvailabilitySlots = [];
+    const syncedClassTypePreferences = {};
+    
+    // Check each available slot against the actual class schedule
+    availabilitySlots.forEach(slotKey => {
+      const [day, time] = slotKey.split('-');
+      const classType = classTypePreferences[slotKey];
+      
+      // If there's a class of this type scheduled at this time, include it
+      if (classType && isClassScheduled(day, classType, time)) {
+        syncedAvailabilitySlots.push(slotKey);
+        syncedClassTypePreferences[slotKey] = classType;
+      } else {
+        // If there's no class of this specific type, check if there's any class
+        // of a type this instructor can teach
+        for (const type of instructor.classTypes) {
+          if (isClassScheduled(day, type, time)) {
+            syncedAvailabilitySlots.push(slotKey);
+            syncedClassTypePreferences[slotKey] = type;
+            break;
+          }
+        }
+      }
+    });
+    
     // Create updated instructor with new availability and class type preferences
     const updatedInstructor = {
       ...instructor,
@@ -144,6 +238,10 @@ const InstructorManagement = () => {
     
     // Update the instructor
     updateInstructor(selectedInstructor, updatedInstructor);
+    
+    // Preserve the class type selections in the UI
+    // This ensures the UI state stays consistent with what was saved
+    setInstructorClassTypes({...instructorClassTypes});
     
     // Show success message
     alert(`Availability for ${instructor.name} has been saved successfully.`);
@@ -455,13 +553,13 @@ const InstructorManagement = () => {
                           <div className="flex flex-col items-center space-y-1">
                             <input 
                               type="checkbox" 
-                              className="form-checkbox h-5 w-5 text-blue-600"
+                              className={`form-checkbox h-5 w-5 ${instructorAvailability[day]?.[time] ? getClassTypeColor(instructorClassTypes[day]?.[time]) : 'text-gray-600'}`}
                               checked={instructorAvailability[day]?.[time] || false}
                               onChange={(e) => handleAvailabilityChange(day, time, e.target.checked)}
                             />
                             {instructorAvailability[day]?.[time] && (
                               <select
-                                className="text-xs w-full p-1 border rounded"
+                                className={`text-xs w-full p-1 border rounded ${getClassTypeColor(instructorClassTypes[day]?.[time])}`}
                                 value={instructorClassTypes[day]?.[time] || ''}
                                 onChange={(e) => handleClassTypeChange(day, time, e.target.value)}
                               >

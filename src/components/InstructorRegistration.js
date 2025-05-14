@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useClassSchedule } from '../context/ClassScheduleContext';
 
 const InstructorRegistration = () => {
-  const { CLASS_TYPES, DAYS_OF_WEEK, CLASS_TIMES, addInstructor } = useClassSchedule();
+  const { CLASS_TYPES, DAYS_OF_WEEK, CLASS_TIMES, addInstructor, schedule } = useClassSchedule();
+  
+  // Helper function to check if a class is scheduled at a specific day, type, and time
+  const isClassScheduled = (day, type, time) => {
+    return schedule[day]?.[type]?.[time] !== undefined && schedule[day][type][time] !== null;
+  };
   
   // State for instructor self-registration
   const [instructorForm, setInstructorForm] = useState({
@@ -93,13 +98,15 @@ const InstructorRegistration = () => {
       blockSize: 2, // Default block size
       minClasses: 2, // Default minimum classes
       maxClasses: 10, // Default maximum classes
-      availability: {},
+      availability: [],
+      classTypePreferences: {},
       unavailability: {}
     };
     
     // Process availability and unavailability data
     const availabilitySlots = [];
     const unavailabilitySlots = [];
+    const classTypePreferences = {};
     
     // Create a map of time ranges to specific time slots
     const timeRangeMap = {
@@ -124,7 +131,13 @@ const InstructorRegistration = () => {
             const timeSlots = timeRangeMap[timeRange] || [];
             // Add each specific time slot as available
             timeSlots.forEach(time => {
-              availabilitySlots.push(`${day}-${time}`);
+              const slotKey = `${day}-${time}`;
+              availabilitySlots.push(slotKey);
+              
+              // Set class type preference for this slot (default to first class type they can teach)
+              if (instructorForm.classTypes.length > 0) {
+                classTypePreferences[slotKey] = instructorForm.classTypes[0];
+              }
             });
           });
         });
@@ -132,7 +145,13 @@ const InstructorRegistration = () => {
         // If no preferred times specified, assume all times on preferred days are available
         instructorForm.preferredDays.forEach(day => {
           CLASS_TIMES.forEach(time => {
-            availabilitySlots.push(`${day}-${time}`);
+            const slotKey = `${day}-${time}`;
+            availabilitySlots.push(slotKey);
+            
+            // Set class type preference for this slot (default to first class type they can teach)
+            if (instructorForm.classTypes.length > 0) {
+              classTypePreferences[slotKey] = instructorForm.classTypes[0];
+            }
           });
         });
       }
@@ -142,11 +161,16 @@ const InstructorRegistration = () => {
     if (instructorForm.unavailableDays && instructorForm.unavailableDays.length > 0) {
       instructorForm.unavailableDays.forEach(day => {
         CLASS_TIMES.forEach(time => {
-          unavailabilitySlots.push(`${day}-${time}`);
+          const slotKey = `${day}-${time}`;
+          unavailabilitySlots.push(slotKey);
           // Remove from availability if it was added
-          const slotIndex = availabilitySlots.indexOf(`${day}-${time}`);
+          const slotIndex = availabilitySlots.indexOf(slotKey);
           if (slotIndex !== -1) {
             availabilitySlots.splice(slotIndex, 1);
+            // Also remove from class type preferences
+            if (classTypePreferences[slotKey]) {
+              delete classTypePreferences[slotKey];
+            }
           }
         });
       });
@@ -162,11 +186,16 @@ const InstructorRegistration = () => {
             // Add each specific time slot in the range
             const timeSlots = timeRangeMap[timeRange] || [];
             timeSlots.forEach(time => {
-              unavailabilitySlots.push(`${day}-${time}`);
+              const slotKey = `${day}-${time}`;
+              unavailabilitySlots.push(slotKey);
               // Remove from availability if it was added
-              const slotIndex = availabilitySlots.indexOf(`${day}-${time}`);
+              const slotIndex = availabilitySlots.indexOf(slotKey);
               if (slotIndex !== -1) {
                 availabilitySlots.splice(slotIndex, 1);
+                // Also remove from class type preferences
+                if (classTypePreferences[slotKey]) {
+                  delete classTypePreferences[slotKey];
+                }
               }
             });
           }
@@ -174,8 +203,38 @@ const InstructorRegistration = () => {
       });
     }
     
+    // Sync availability with actual class schedule
+    // This ensures that only time slots that have classes in the schedule are marked as available
+    const syncedAvailabilitySlots = [];
+    const syncedClassTypePreferences = {};
+    
+    // Check each available slot against the actual class schedule
+    availabilitySlots.forEach(slotKey => {
+      const [day, time] = slotKey.split('-');
+      
+      // Check if there's a class scheduled at this day/time
+      let hasScheduledClass = false;
+      for (const type of CLASS_TYPES) {
+        if (instructorForm.classTypes.includes(type)) {
+          // If this instructor can teach this class type and it's scheduled
+          if (isClassScheduled(day, type, time)) {
+            hasScheduledClass = true;
+            // Set class type preference to this specific class type
+            syncedClassTypePreferences[slotKey] = type;
+            break;
+          }
+        }
+      }
+      
+      // If there's a class scheduled at this time that the instructor can teach
+      if (hasScheduledClass) {
+        syncedAvailabilitySlots.push(slotKey);
+      }
+    });
+    
     // Set the availability and unavailability slots
-    newInstructor.availability = availabilitySlots;
+    newInstructor.availability = syncedAvailabilitySlots.length > 0 ? syncedAvailabilitySlots : availabilitySlots;
+    newInstructor.classTypePreferences = syncedClassTypePreferences;
     newInstructor.unavailability.slots = unavailabilitySlots;
     
     // Add notes if provided
