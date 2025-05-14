@@ -2,9 +2,12 @@ import React from 'react';
 
 const LoadingSpinner = () => {
   return (
-    <div className="flex items-center justify-center h-screen">
-      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-      <p className="ml-4 text-lg font-semibold text-blue-600">Loading your fitness schedule...</p>
+    <div className="flex flex-col items-center justify-center gap-4">
+      <div className="relative">
+        <div className="h-16 w-16 rounded-full border-t-4 border-accent-turquoise animate-spin"></div>
+        <div className="h-16 w-16 rounded-full border-r-4 border-accent-blue animate-pulse-slow absolute top-0 opacity-70"></div>
+      </div>
+      <span className="text-xl font-light tracking-wider text-white/80">LOADING</span>
     </div>
   );
 };

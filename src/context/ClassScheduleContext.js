@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { deepClone, validateInstructorData, hasSchedulingConflict, debounce } from '../utils/helpers';
 
 // Create context
 const ClassScheduleContext = createContext();
@@ -48,6 +49,8 @@ export const ClassScheduleProvider = ({ children }) => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      // Clear any previous errors
+      setError(null);
       
       // Fetch instructors
       const { data: instructorsData, error: instructorsError } = await supabase
@@ -73,86 +76,92 @@ export const ClassScheduleProvider = ({ children }) => {
       setSchedule(scheduleData || initializeEmptySchedule());
       setLockedAssignments(locksData?.assignments || {});
       
+      // Ensure error state is cleared after successful data fetch
+      setError(null);
+      
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError(error.message);
       
       // Fall back to local storage if Supabase fetch fails
       const savedInstructors = localStorage.getItem('instructors');
       const savedSchedule = localStorage.getItem('schedule');
       const savedLocks = localStorage.getItem('lockedAssignments');
       
-      if (savedInstructors) setInstructors(JSON.parse(savedInstructors));
-      if (savedSchedule) setSchedule(JSON.parse(savedSchedule));
-      if (savedLocks) setLockedAssignments(JSON.parse(savedLocks));
+      if (savedInstructors) {
+        try {
+          setInstructors(JSON.parse(savedInstructors));
+          // If we have local data, don't show an error
+          setError(null);
+        } catch (e) {
+          console.error('Error parsing saved instructors:', e);
+          setInstructors(INITIAL_INSTRUCTORS);
+          setError('Failed to load instructor data. Using default data.');
+        }
+      }
+      
+      if (savedSchedule) {
+        try {
+          setSchedule(JSON.parse(savedSchedule));
+        } catch (e) {
+          console.error('Error parsing saved schedule:', e);
+          setSchedule(initializeEmptySchedule());
+        }
+      }
+      
+      if (savedLocks) {
+        try {
+          setLockedAssignments(JSON.parse(savedLocks));
+        } catch (e) {
+          console.error('Error parsing saved locks:', e);
+          setLockedAssignments({});
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Save to Supabase and localStorage whenever state changes
-  useEffect(() => {
-    if (!loading) {
-      // Save to localStorage as backup
+  // Save to Supabase and localStorage whenever state changes (debounced)
+  const debouncedSaveInstructors = debounce(async () => {
+    try {
+      // First save to localStorage as backup
       localStorage.setItem('instructors', JSON.stringify(instructors));
       
-      // Save to Supabase
-      const saveInstructors = async () => {
-        try {
-          // First, delete all existing instructors
-          await supabase.from('instructors').delete().gt('id', '0');
-          
-          // Then insert the new ones
-          const { error } = await supabase.from('instructors').insert(instructors);
-          if (error) throw error;
-        } catch (error) {
-          console.error('Error saving instructors:', error);
-        }
-      };
+      // Validate all instructors before saving
+      const validatedInstructors = instructors.map(instructor => validateInstructorData(instructor));
       
-      saveInstructors();
+      // Save to Supabase
+      const { error } = await supabase.from('instructors').upsert(
+        validatedInstructors,
+        { onConflict: 'id' }
+      );
+      
+      if (error) {
+        console.error('Supabase error saving instructors:', error);
+        // Don't throw error, just log it and continue
+        // We already saved to localStorage as backup
+        console.warn('Using localStorage backup for instructors');
+      }
+      
+      // Clear any previous errors if save was successful
+      setError(null);
+    } catch (error) {
+      console.error('Error saving instructors:', error);
+      // Don't set error state here, as it will cause the error UI to show
+      // Instead, just log the error and continue using the localStorage backup
+      console.warn('Using localStorage backup for instructors');
+    }
+  }, 1000); // 1 second debounce
+  
+  useEffect(() => {
+    if (!loading) {
+      debouncedSaveInstructors();
     }
   }, [instructors, loading]);
   
   useEffect(() => {
     if (!loading) {
-      // Save to localStorage as backup
-      localStorage.setItem('schedule', JSON.stringify(schedule));
-      
-      // Save to Supabase
-      const saveSchedule = async () => {
-        try {
-          // Check if schedule record exists
-          const { data, error: fetchError } = await supabase
-            .from('schedule')
-            .select('id')
-            .single();
-          
-          if (fetchError && fetchError.code !== 'PGRST116') {
-            // Error other than 'no rows returned'
-            throw fetchError;
-          }
-          
-          if (data) {
-            // Update existing record
-            const { error } = await supabase
-              .from('schedule')
-              .update({ data: schedule })
-              .eq('id', data.id);
-            if (error) throw error;
-          } else {
-            // Insert new record
-            const { error } = await supabase
-              .from('schedule')
-              .insert({ data: schedule });
-            if (error) throw error;
-          }
-        } catch (error) {
-          console.error('Error saving schedule:', error);
-        }
-      };
-      
-      saveSchedule();
+      debouncedSaveSchedule();
     }
   }, [schedule, loading]);
   
@@ -212,6 +221,42 @@ export const ClassScheduleProvider = ({ children }) => {
     });
     return emptySchedule;
   }
+  
+  // Debounced save schedule function
+  const debouncedSaveSchedule = debounce(async () => {
+    try {
+      // Save to localStorage as backup
+      localStorage.setItem('schedule', JSON.stringify(schedule));
+      
+      // Check if schedule record exists
+      const { data, error: fetchError } = await supabase
+        .from('schedule')
+        .select('id')
+        .single();
+      
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
+      
+      if (data) {
+        // Update existing record
+        const { error } = await supabase
+          .from('schedule')
+          .update({ data: schedule })
+          .eq('id', data.id);
+        if (error) throw error;
+      } else {
+        // Insert new record
+        const { error } = await supabase
+          .from('schedule')
+          .insert({ data: schedule });
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error('Error saving schedule:', error);
+      setError('Failed to save schedule data. Changes may not persist if you refresh the page.');
+    }
+  }, 1000); // 1 second debounce
 
   // Add predefined classes to the schedule
   function addPredefinedClasses() {
@@ -271,13 +316,25 @@ export const ClassScheduleProvider = ({ children }) => {
   // Add class to the schedule
   function addClass(day, type, time, instructorId = 'TBD') {
     setSchedule(prevSchedule => {
-      const newSchedule = JSON.parse(JSON.stringify(prevSchedule));
+      // Use efficient cloning instead of JSON.parse/stringify
+      const newSchedule = deepClone(prevSchedule);
       if (!newSchedule[day]) {
         newSchedule[day] = {};
       }
       if (!newSchedule[day][type]) {
         newSchedule[day][type] = {};
       }
+      
+      // Check for instructor conflicts before assigning
+      if (instructorId !== 'TBD') {
+        const hasConflict = hasSchedulingConflict(prevSchedule, instructorId, day, time, CLASS_TYPES);
+        if (hasConflict) {
+          // If there's a conflict, don't update and return the previous schedule
+          console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
+          return prevSchedule;
+        }
+      }
+      
       newSchedule[day][type][time] = instructorId;
       return newSchedule;
     });
@@ -294,9 +351,27 @@ export const ClassScheduleProvider = ({ children }) => {
       return false;
     }
     
+    // Check for scheduling conflicts
+    if (instructorId !== 'TBD') {
+      const hasConflict = hasSchedulingConflict(schedule, instructorId, day, time, CLASS_TYPES);
+      if (hasConflict) {
+        console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
+        return false;
+      }
+      
+      // Check if instructor is available at this time
+      if (instructor.availability && instructor.availability.length > 0) {
+        const isAvailable = instructor.availability.includes(`${day}-${time}`);
+        if (!isAvailable) {
+          console.warn(`Instructor ${instructorId} is not available on ${day} at ${time}`);
+          return false;
+        }
+      }
+    }
+    
     // Update the schedule
     setSchedule(prevSchedule => {
-      const newSchedule = JSON.parse(JSON.stringify(prevSchedule));
+      const newSchedule = deepClone(prevSchedule);
       if (!newSchedule[day]) newSchedule[day] = {};
       if (!newSchedule[day][type]) newSchedule[day][type] = {};
       newSchedule[day][type][time] = instructorId;
@@ -314,12 +389,15 @@ export const ClassScheduleProvider = ({ children }) => {
   // Remove class from the schedule
   function removeClass(day, type, time) {
     setSchedule(prevSchedule => {
-      const newSchedule = JSON.parse(JSON.stringify(prevSchedule));
+      const newSchedule = deepClone(prevSchedule);
       if (newSchedule[day] && newSchedule[day][type]) {
         newSchedule[day][type][time] = null;
       }
       return newSchedule;
     });
+    
+    // Also remove any locks for this class
+    unlockAssignment(day, type, time);
   }
 
   // Clear the schedule
@@ -680,16 +758,46 @@ export const ClassScheduleProvider = ({ children }) => {
 
   // Add a new instructor
   function addInstructor(instructor) {
-    setInstructors(prev => [...prev, instructor]);
+    // Validate instructor data before adding
+    const validatedInstructor = validateInstructorData(instructor);
+    setInstructors(prev => [...prev, validatedInstructor]);
+    return validatedInstructor.id; // Return the ID for reference
   }
 
   // Update an existing instructor
   function updateInstructor(id, updatedData) {
-    setInstructors(prev => 
-      prev.map(instructor => 
-        instructor.id === id ? { ...instructor, ...updatedData } : instructor
-      )
-    );
+    try {
+      // Validate the updated data
+      const validatedUpdates = validateInstructorData({ ...updatedData, id });
+      
+      // Save current state for history/undo
+      const currentInstructors = [...instructors];
+      saveToHistory('instructors', currentInstructors);
+      
+      setInstructors(prev => {
+        const instructorIndex = prev.findIndex(instructor => instructor.id === id);
+        
+        // If instructor not found, return unchanged
+        if (instructorIndex === -1) return prev;
+        
+        // Create a new array with the updated instructor
+        const newInstructors = [...prev];
+        newInstructors[instructorIndex] = {
+          ...prev[instructorIndex],
+          ...validatedUpdates
+        };
+        
+        return newInstructors;
+      });
+      
+      // Clear any existing errors if they match our known error message
+      setError(null);
+      
+      return true;
+    } catch (err) {
+      console.error('Error updating instructor:', err);
+      return false;
+    }
   }
   
   // Delete an instructor
@@ -797,13 +905,45 @@ export const ClassScheduleProvider = ({ children }) => {
     return classes;
   }
 
+  // Undo last change (implement a simple history feature)
+  const [history, setHistory] = useState([]);
+  
+  function saveToHistory() {
+    // Save current state to history
+    setHistory(prev => [
+      ...prev.slice(-9), // Keep only the last 10 states (including this one)
+      {
+        instructors: deepClone(instructors),
+        schedule: deepClone(schedule),
+        lockedAssignments: deepClone(lockedAssignments)
+      }
+    ]);
+  }
+  
+  function undoLastChange() {
+    if (history.length > 0) {
+      const previousState = history[history.length - 1];
+      setInstructors(previousState.instructors);
+      setSchedule(previousState.schedule);
+      setLockedAssignments(previousState.lockedAssignments);
+      setHistory(prev => prev.slice(0, -1));
+      return true;
+    }
+    return false;
+  }
+  
+  // Save current state to history whenever instructors or schedule changes
+  useEffect(() => {
+    if (!loading) {
+      saveToHistory();
+    }
+  }, [instructors, schedule, lockedAssignments]);
+
   return (
     <ClassScheduleContext.Provider
       value={{
         instructors,
-        setInstructors,
         schedule,
-        setSchedule,
         loading,
         error,
         CLASS_TYPES,
@@ -812,19 +952,22 @@ export const ClassScheduleProvider = ({ children }) => {
         addInstructor,
         updateInstructor,
         deleteInstructor,
+        setInstructorAvailability,
         addClass,
         removeClass,
         clearSchedule,
-        addPredefinedClasses,
+        manuallyAssignInstructor,
         generateSchedule,
-        getTotalAssignedClasses,
-        getTotalScheduledSlots,
-        setInstructorAvailability,
-        getInstructorClasses,
+        addPredefinedClasses,
         lockAssignment,
         unlockAssignment,
         isAssignmentLocked,
-        manuallyAssignInstructor
+        getInstructorClasses,
+        getTotalAssignedClasses,
+        getTotalScheduledSlots,
+        undoLastChange, // Add undo functionality
+        hasSchedulingConflict, // Expose conflict detection
+        validateInstructorData // Expose validation function
       }}
     >
       {children}
