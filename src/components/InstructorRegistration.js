@@ -203,37 +203,33 @@ const InstructorRegistration = () => {
       });
     }
     
-    // Sync availability with actual class schedule
-    // This ensures that only time slots that have classes in the schedule are marked as available
-    const syncedAvailabilitySlots = [];
-    const syncedClassTypePreferences = {};
+    // IMPORTANT: Preserve ALL instructor availability slots, regardless of scheduled classes
+    // This ensures that full-time instructors like Dayron have all their availability saved
     
-    // Check each available slot against the actual class schedule
+    // Update class type preferences for all available slots
+    // Reuse the existing classTypePreferences object instead of redeclaring it
+    
+    // For each available slot, set the default class type preference
     availabilitySlots.forEach(slotKey => {
-      const [day, time] = slotKey.split('-');
-      
-      // Check if there's a class scheduled at this day/time
-      let hasScheduledClass = false;
-      for (const type of CLASS_TYPES) {
-        if (instructorForm.classTypes.includes(type)) {
-          // If this instructor can teach this class type and it's scheduled
-          if (isClassScheduled(day, type, time)) {
-            hasScheduledClass = true;
-            // Set class type preference to this specific class type
-            syncedClassTypePreferences[slotKey] = type;
-            break;
-          }
-        }
+      // Default to the first class type the instructor can teach
+      if (instructorForm.classTypes.length > 0) {
+        classTypePreferences[slotKey] = instructorForm.classTypes[0];
       }
       
-      // If there's a class scheduled at this time that the instructor can teach
-      if (hasScheduledClass) {
-        syncedAvailabilitySlots.push(slotKey);
+      // Check if there's a specific class scheduled that matches this slot
+      const [day, time] = slotKey.split('-');
+      for (const type of CLASS_TYPES) {
+        if (instructorForm.classTypes.includes(type) && isClassScheduled(day, type, time)) {
+          // If there's a scheduled class of this type, set the preference to match
+          classTypePreferences[slotKey] = type;
+          break;
+        }
       }
     });
     
     // Set the availability and unavailability slots
-    newInstructor.availability = syncedAvailabilitySlots.length > 0 ? syncedAvailabilitySlots : availabilitySlots;
+    // IMPORTANT: Use the full availabilitySlots array to preserve ALL instructor availability
+    newInstructor.availability = availabilitySlots;
     newInstructor.classTypePreferences = syncedClassTypePreferences;
     newInstructor.unavailability.slots = unavailabilitySlots;
     

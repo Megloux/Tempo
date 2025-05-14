@@ -80,40 +80,26 @@ const InstructorManagement = () => {
           });
         }
         
-        // Only highlight scheduled classes that match instructor's explicit availability
-        // This ensures we respect the instructor's selected availability
+        // IMPORTANT: Show all of the instructor's availability, regardless of scheduled classes
+        // This ensures we respect the instructor's full availability preferences
         if (instructor.availability && instructor.availability.length > 0) {
-          // Get the list of slots the instructor is available for
-          const availableSlots = new Set(instructor.availability);
-          
-          DAYS_OF_WEEK.forEach(day => {
-            CLASS_TIMES.forEach(time => {
-              const slotKey = `${day}-${time}`;
+          // Mark all slots from the instructor's availability as available
+          instructor.availability.forEach(slot => {
+            const [day, time] = slot.split('-');
+            if (availabilityGrid[day] && CLASS_TIMES.includes(time)) {
+              // Mark this slot as available
+              availabilityGrid[day][time] = true;
               
-              // Only check if this slot is in the instructor's availability
-              if (availableSlots.has(slotKey)) {
-                // Check if there's a class scheduled at this time that matches their capabilities
-                let hasMatchingClass = false;
-                let matchingClassType = '';
-                
-                // Check each class type
-                for (const type of CLASS_TYPES) {
-                  // If the instructor can teach this class type and it's scheduled
-                  if (instructor.classTypes.includes(type) && isClassScheduled(day, type, time)) {
-                    hasMatchingClass = true;
-                    matchingClassType = type;
-                    break;
-                  }
-                }
-                
-                // If there's a matching class, keep it available and set the class type
-                if (hasMatchingClass) {
-                  // We don't need to set availabilityGrid[day][time] = true here
-                  // because it's already set to true from the instructor's availability
-                  classTypeGrid[day][time] = matchingClassType;
-                }
+              // Set class type preference if available
+              if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
+                classTypeGrid[day][time] = instructor.classTypePreferences[slot];
               }
-            });
+              
+              // If no class type preference is set, use the first class type they can teach
+              if (!classTypeGrid[day][time] && instructor.classTypes.length > 0) {
+                classTypeGrid[day][time] = instructor.classTypes[0];
+              }
+            }
           });
         }
         
