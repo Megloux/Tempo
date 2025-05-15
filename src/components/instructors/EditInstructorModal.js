@@ -189,6 +189,7 @@ const EditInstructorModal = ({
       alert('Failed to save changes. Please try again.');
     }
   };
+  
   if (!isOpen || !instructor) return null;
 
   return (
