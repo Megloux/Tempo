@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useClassSchedule } from '../context/ClassScheduleContext';
+import { useToast } from '../context/ToastContext';
 
 const InstructorRegistration = () => {
   const { CLASS_TYPES, DAYS_OF_WEEK, CLASS_TIMES, addInstructor, schedule } = useClassSchedule();
+  const toast = useToast();
   
   // Helper function to check if a class is scheduled at a specific day, type, and time
   const isClassScheduled = (day, type, time) => {
@@ -68,24 +70,22 @@ const InstructorRegistration = () => {
           return { ...prev, [field]: currentArray.filter(i => i !== item) };
         }
       });
-      
-      console.log(`Checkbox ${name} changed to ${checked}`);
     } else {
       setInstructorForm(prev => ({ ...prev, [name]: value }));
     }
   };
   
   // Submit instructor self-registration form
-  const submitInstructorForm = () => {
+  const submitInstructorForm = async () => {
     // Validate required fields
     if (!instructorForm.name || !instructorForm.email) {
-      alert('Name and email are required!');
+      toast.error('Missing Information: Name and email are required!');
       return;
     }
     
     // Validate at least one class type is selected
     if (!instructorForm.classTypes || instructorForm.classTypes.length === 0) {
-      alert('Please select at least one class type you can teach.');
+      toast.error('Missing Information: Please select at least one class type you can teach.');
       return;
     }
     
@@ -107,7 +107,7 @@ const InstructorRegistration = () => {
       maxClasses: 10, // Default maximum classes
       availability: [],
       classTypePreferences: {},
-      unavailability: {}
+      unavailability: {slots: []}
     };
     
     // Process availability and unavailability data
@@ -210,32 +210,7 @@ const InstructorRegistration = () => {
       });
     }
     
-    // IMPORTANT: Preserve ALL instructor availability slots, regardless of scheduled classes
-    // This ensures that full-time instructors like Dayron have all their availability saved
-    
-    // Update class type preferences for all available slots
-    // Reuse the existing classTypePreferences object instead of redeclaring it
-    
-    // For each available slot, set the default class type preference
-    availabilitySlots.forEach(slotKey => {
-      // Default to the first class type the instructor can teach
-      if (instructorForm.classTypes.length > 0) {
-        classTypePreferences[slotKey] = instructorForm.classTypes[0];
-      }
-      
-      // Check if there's a specific class scheduled that matches this slot
-      const [day, time] = slotKey.split('-');
-      for (const type of CLASS_TYPES) {
-        if (instructorForm.classTypes.includes(type) && isClassScheduled(day, type, time)) {
-          // If there's a scheduled class of this type, set the preference to match
-          classTypePreferences[slotKey] = type;
-          break;
-        }
-      }
-    });
-    
     // Set the availability and unavailability slots
-    // IMPORTANT: Use the full availabilitySlots array to preserve ALL instructor availability
     newInstructor.availability = availabilitySlots;
     newInstructor.classTypePreferences = classTypePreferences;
     newInstructor.unavailability.slots = unavailabilitySlots;
@@ -245,21 +220,19 @@ const InstructorRegistration = () => {
       newInstructor.notes = instructorForm.notes;
     }
     
-    // Add the new instructor to the system
-    const instructorId = addInstructor(newInstructor);
-    
-    if (instructorId) {
-      // Log success for debugging
-      console.log(`Instructor ${instructorForm.name} (ID: ${instructorId}) added successfully`);
-      console.log('Instructor data:', newInstructor);
+    try {
+      // Show loading toast
+      toast.info('Registering Instructor: Please wait while we register the instructor...');
       
-      // Force a manual save to localStorage as an extra precaution
-      const currentInstructors = JSON.parse(localStorage.getItem('instructors') || '[]');
-      const updatedInstructors = [...currentInstructors, newInstructor];
-      localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
+      // Add the new instructor - now properly awaiting the async function
+      const instructorId = await addInstructor(newInstructor);
+      
+      if (!instructorId) {
+        throw new Error('Failed to add instructor - no ID returned');
+      }
       
       // Show success message
-      alert(`Thank you, ${instructorForm.name}! Your information has been submitted successfully. Your instructor ID is: ${instructorId}`);
+      toast.success(`Registration Successful: ${newInstructor.name} has been registered successfully!`);
       
       // Reset the form
       setInstructorForm({
@@ -273,63 +246,77 @@ const InstructorRegistration = () => {
         unavailableTimes: [],
         notes: ''
       });
-    } else {
-      // Handle registration failure
-      console.error('Failed to add instructor:', newInstructor);
-      alert('There was an error submitting your registration. Please try again or contact support.');
+    } catch (err) {
+      console.error('Error registering instructor:', err);
+      toast.error('Registration Failed: There was an error registering the instructor. Please try again.');
       
       // Still try to save to localStorage as a backup
       try {
         const currentInstructors = JSON.parse(localStorage.getItem('instructors') || '[]');
         const updatedInstructors = [...currentInstructors, newInstructor];
         localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
-        console.log('Saved instructor to localStorage as backup');
-      } catch (err) {
-        console.error('Failed to save instructor to localStorage:', err);
+        console.log('Saved to localStorage as backup:', newInstructor);
+      } catch (e) {
+        console.error('Error saving to localStorage:', e);
       }
     }
   };
-
+  
+  // Reset form to initial state
+  const resetForm = () => {
+    setInstructorForm({
+      name: '',
+      email: '',
+      phone: '',
+      classTypes: [],
+      preferredDays: [],
+      preferredTimes: [],
+      unavailableDays: [],
+      unavailableTimes: [],
+      notes: ''
+    });
+  };
+  
   return (
     <div className="max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-center text-blue-800">Instructor Registration Form</h2>
-      <p className="mb-6 text-gray-600">Please provide your information and teaching preferences to join our instructor team.</p>
+      <h2 className="text-2xl font-bold mb-6 text-center text-black">Instructor Registration Form</h2>
+      <p className="mb-6 text-black">Please provide your information and teaching preferences to join our instructor team.</p>
       
       <div className="space-y-6">
         {/* Personal Information Section */}
         <div className="bg-gray-50 p-4 rounded-md">
-          <h3 className="text-lg font-semibold mb-4 text-blue-700">Personal Information</h3>
+          <h3 className="text-lg font-semibold mb-4 text-black">Personal Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Full Name:</label>
+              <label className="block text-sm font-medium text-black mb-1">Full Name:</label>
               <input
                 type="text"
                 name="name"
                 value={instructorForm.name}
                 onChange={handleInstructorFormChange}
-                className="w-full p-2 border rounded"
+                className="w-full p-2 border rounded text-black"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Email:</label>
+              <label className="block text-sm font-medium text-black mb-1">Email:</label>
               <input
                 type="email"
                 name="email"
                 value={instructorForm.email}
                 onChange={handleInstructorFormChange}
-                className="w-full p-2 border rounded"
+                className="w-full p-2 border rounded text-black"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Phone Number:</label>
+              <label className="block text-sm font-medium text-black mb-1">Phone:</label>
               <input
                 type="tel"
                 name="phone"
                 value={instructorForm.phone}
                 onChange={handleInstructorFormChange}
-                className="w-full p-2 border rounded"
+                className="w-full p-2 border rounded text-black"
               />
             </div>
           </div>
@@ -337,10 +324,10 @@ const InstructorRegistration = () => {
         
         {/* Class Types Section */}
         <div className="bg-gray-50 p-4 rounded-md">
-          <h3 className="text-lg font-semibold mb-4 text-blue-700">Class Types</h3>
-          <p className="text-sm text-gray-600 mb-3">Select all class types you are qualified to teach:</p>
+          <h3 className="text-lg font-semibold mb-4 text-black">Class Types</h3>
+          <p className="mb-2 text-black">Select all class types you can teach:</p>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {CLASS_TYPES.map(type => (
               <div key={type} className="flex items-center">
                 <input
@@ -349,9 +336,9 @@ const InstructorRegistration = () => {
                   name={`classTypes-${type}`}
                   checked={instructorForm.classTypes.includes(type)}
                   onChange={handleInstructorFormChange}
-                  className="h-5 w-5 text-blue-600"
+                  className="mr-2"
                 />
-                <label htmlFor={`classTypes-${type}`} className="ml-2 text-gray-700">{type}</label>
+                <label htmlFor={`classTypes-${type}`} className="text-black">{type}</label>
               </div>
             ))}
           </div>
@@ -359,12 +346,12 @@ const InstructorRegistration = () => {
         
         {/* Availability Section */}
         <div className="bg-gray-50 p-4 rounded-md">
-          <h3 className="text-lg font-semibold mb-4 text-blue-700">Availability</h3>
+          <h3 className="text-lg font-semibold mb-4 text-black">Availability</h3>
           
           {/* Days Available */}
           <div className="mb-4">
-            <p className="text-sm font-medium mb-2">Which days are you available to teach?</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <p className="mb-2 text-black">Preferred days to teach:</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {DAYS_OF_WEEK.map(day => (
                 <div key={day} className="flex items-center">
                   <input
@@ -373,9 +360,9 @@ const InstructorRegistration = () => {
                     name={`preferredDays-${day}`}
                     checked={instructorForm.preferredDays.includes(day)}
                     onChange={handleInstructorFormChange}
-                    className="h-5 w-5 text-blue-600"
+                    className="mr-2"
                   />
-                  <label htmlFor={`preferredDays-${day}`} className="ml-2 text-gray-700">{day}</label>
+                  <label htmlFor={`preferredDays-${day}`} className="text-black">{day}</label>
                 </div>
               ))}
             </div>
@@ -383,19 +370,19 @@ const InstructorRegistration = () => {
           
           {/* Preferred Time Slots */}
           <div className="mb-4">
-            <p className="text-sm font-medium mb-2">Preferred time slots:</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {["Morning (5:30-9:00 AM)", "Mid-Morning (9:00-12:00)", "Afternoon (12:00-4:00 PM)", "Evening (4:00-8:00 PM)"].map(timeSlot => (
-                <div key={timeSlot} className="flex items-center">
+            <p className="mb-2 text-black">Preferred time slots:</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {timeSlots.map(slot => (
+                <div key={slot} className="flex items-center">
                   <input
                     type="checkbox"
-                    id={`preferredTimes-${timeSlot}`}
-                    name={`preferredTimes-${timeSlot}`}
-                    checked={instructorForm.preferredTimes.includes(timeSlot)}
+                    id={`preferredTimes-${slot}`}
+                    name={`preferredTimes-${slot}`}
+                    checked={instructorForm.preferredTimes.includes(slot)}
                     onChange={handleInstructorFormChange}
-                    className="h-5 w-5 text-blue-600"
+                    className="mr-2"
                   />
-                  <label htmlFor={`preferredTimes-${timeSlot}`} className="ml-2 text-gray-700 text-sm">{timeSlot}</label>
+                  <label htmlFor={`preferredTimes-${slot}`} className="text-black">{slot}</label>
                 </div>
               ))}
             </div>
@@ -403,39 +390,39 @@ const InstructorRegistration = () => {
           
           {/* Unavailable Days */}
           <div className="mb-4">
-            <p className="text-sm font-medium mb-2">Please mark any days you are completely unavailable:</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <p className="mb-2 text-black">Days you CANNOT teach:</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {DAYS_OF_WEEK.map(day => (
-                <div key={day} className="flex items-center">
+                <div key={`unavailable-${day}`} className="flex items-center">
                   <input
                     type="checkbox"
                     id={`unavailableDays-${day}`}
                     name={`unavailableDays-${day}`}
                     checked={instructorForm.unavailableDays.includes(day)}
                     onChange={handleInstructorFormChange}
-                    className="h-5 w-5 text-red-600"
+                    className="mr-2"
                   />
-                  <label htmlFor={`unavailableDays-${day}`} className="ml-2 text-gray-700">{day}</label>
+                  <label htmlFor={`unavailableDays-${day}`} className="text-black">{day}</label>
                 </div>
               ))}
             </div>
           </div>
           
           {/* Unavailable Time Slots */}
-          <div>
-            <p className="text-sm font-medium mb-2">Please mark any time slots you are completely unavailable:</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {timeSlots.map(timeSlot => (
-                <div key={timeSlot} className="flex items-center">
+          <div className="mb-4">
+            <p className="mb-2 text-black">Time slots you CANNOT teach:</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {timeSlots.map(slot => (
+                <div key={`unavailable-${slot}`} className="flex items-center">
                   <input
                     type="checkbox"
-                    id={`unavailableTimes-${timeSlot}`}
-                    name={`unavailableTimes-${timeSlot}`}
-                    checked={instructorForm.unavailableTimes.includes(timeSlot)}
+                    id={`unavailableTimes-${slot}`}
+                    name={`unavailableTimes-${slot}`}
+                    checked={instructorForm.unavailableTimes.includes(slot)}
                     onChange={handleInstructorFormChange}
-                    className="h-5 w-5 text-red-600"
+                    className="mr-2"
                   />
-                  <label htmlFor={`unavailableTimes-${timeSlot}`} className="ml-2 text-gray-700 text-sm">{timeSlot}</label>
+                  <label htmlFor={`unavailableTimes-${slot}`} className="text-black">{slot}</label>
                 </div>
               ))}
             </div>
@@ -444,17 +431,14 @@ const InstructorRegistration = () => {
         
         {/* Additional Notes */}
         <div className="bg-gray-50 p-4 rounded-md">
-          <h3 className="text-lg font-semibold mb-4 text-blue-700">Additional Information</h3>
-          <div>
-            <label className="block text-sm font-medium mb-1">Notes or special requests:</label>
-            <textarea
-              name="notes"
-              value={instructorForm.notes}
-              onChange={handleInstructorFormChange}
-              className="w-full p-2 border rounded h-24"
-              placeholder="Share any additional information about your scheduling needs, qualifications, etc."
-            ></textarea>
-          </div>
+          <h3 className="text-lg font-semibold mb-4 text-black">Additional Notes</h3>
+          <textarea
+            name="notes"
+            value={instructorForm.notes}
+            onChange={handleInstructorFormChange}
+            className="w-full p-2 border rounded h-32 text-black"
+            placeholder="Any additional information you'd like us to know..."
+          ></textarea>
         </div>
         
         {/* Submit Button */}

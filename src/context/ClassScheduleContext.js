@@ -815,13 +815,14 @@ export const ClassScheduleProvider = ({ children }) => {
 
   // Check if instructor is unavailable for a specific day and time
   function isInstructorUnavailable(instructor, day, time) {
-    // First check if we have explicit availability data
+    // PRIORITY: Always check explicit availability data first if it exists
     if (Array.isArray(instructor.availability) && instructor.availability.length > 0) {
-      // If we have explicit availability data, instructor is unavailable if this slot is not in their availability
-      return !instructor.availability.includes(`${day}-${time}`);
+      const slotKey = `${day}-${time}`;
+      // Instructor is unavailable if this slot is NOT in their availability array
+      return !instructor.availability.includes(slotKey);
     }
     
-    // Fall back to the old unavailability checks if no explicit availability data exists
+    // Fall back to unavailability checks if no explicit availability
     if (!instructor.unavailability) return false;
     
     // Check day unavailability
@@ -870,6 +871,61 @@ export const ClassScheduleProvider = ({ children }) => {
     return hours * 60 + minutes;
   }
 
+  // Add this new function to standardize availability data format
+  function normalizeAvailabilityData(instructor) {
+    // Create a copy to avoid mutation
+    const normalizedInstructor = { ...instructor };
+    
+    console.log(`Normalizing data for instructor: ${normalizedInstructor.name} (${normalizedInstructor.id})`);
+    
+    // Ensure availability is always an array
+    if (!Array.isArray(normalizedInstructor.availability)) {
+      console.log(`Converting availability to array for ${normalizedInstructor.name}`);
+      normalizedInstructor.availability = [];
+    }
+    
+    // If we have unavailability data but no availability data, convert it
+    if (normalizedInstructor.unavailability && 
+        normalizedInstructor.unavailability.slots && 
+        normalizedInstructor.unavailability.slots.length > 0 && 
+        normalizedInstructor.availability.length === 0) {
+      
+      console.log(`Converting unavailability to availability for ${normalizedInstructor.name}`);
+      
+      // Create availability from inverse of unavailability
+      const availabilitySet = new Set();
+      
+      // Add all possible day-time combinations that are valid for this instructor
+      DAYS_OF_WEEK.forEach(day => {
+        // Only consider valid class slots for this instructor's class types
+        normalizedInstructor.classTypes.forEach(classType => {
+          if (VALID_CLASS_SLOTS[day]?.[classType]) {
+            VALID_CLASS_SLOTS[day][classType].forEach(time => {
+              const slotKey = `${day}-${time}`;
+              availabilitySet.add(slotKey);
+            });
+          }
+        });
+      });
+      
+      // Remove unavailable slots
+      normalizedInstructor.unavailability.slots.forEach(slot => {
+        availabilitySet.delete(slot);
+      });
+      
+      // Convert set to array
+      normalizedInstructor.availability = Array.from(availabilitySet);
+      console.log(`Generated ${normalizedInstructor.availability.length} availability slots from unavailability data`);
+    }
+    
+    // Ensure class type preferences object exists
+    if (!normalizedInstructor.classTypePreferences) {
+      normalizedInstructor.classTypePreferences = {};
+    }
+    
+    return normalizedInstructor;
+  }
+
   // Add a new instructor - returns a promise that resolves with the instructor ID when complete
   async function addInstructor(instructor) {
     try {
@@ -889,17 +945,18 @@ export const ClassScheduleProvider = ({ children }) => {
       // Validate instructor data before adding
       const validatedInstructor = validateInstructorData(instructor);
       
+      // Normalize availability data
+      const normalizedInstructor = normalizeAvailabilityData(validatedInstructor);
+      
       // Ensure all required fields are present
-      if (!validatedInstructor.classTypes) validatedInstructor.classTypes = [];
-      if (!validatedInstructor.availability) validatedInstructor.availability = [];
-      if (!validatedInstructor.classTypePreferences) validatedInstructor.classTypePreferences = {};
-      if (!validatedInstructor.blockSize) validatedInstructor.blockSize = 2;
-      if (!validatedInstructor.minClasses) validatedInstructor.minClasses = 2;
-      if (!validatedInstructor.maxClasses) validatedInstructor.maxClasses = 10;
+      if (!normalizedInstructor.classTypes) normalizedInstructor.classTypes = [];
+      if (!normalizedInstructor.blockSize) normalizedInstructor.blockSize = 2;
+      if (!normalizedInstructor.minClasses) normalizedInstructor.minClasses = 2;
+      if (!normalizedInstructor.maxClasses) normalizedInstructor.maxClasses = 10;
       
       // First save to Supabase to ensure persistence
       const { data, error } = await supabase.from('instructors').upsert(
-        validatedInstructor,
+        normalizedInstructor,
         { onConflict: 'id', returning: 'minimal' }
       );
       
@@ -911,13 +968,13 @@ export const ClassScheduleProvider = ({ children }) => {
       // Update React state with the new instructor
       setInstructors(prev => {
         // Check if instructor already exists (by ID)
-        const exists = prev.some(i => i.id === validatedInstructor.id);
+        const exists = prev.some(i => i.id === normalizedInstructor.id);
         if (exists) {
           // Update existing instructor
-          return prev.map(i => i.id === validatedInstructor.id ? validatedInstructor : i);
+          return prev.map(i => i.id === normalizedInstructor.id ? normalizedInstructor : i);
         } else {
           // Add new instructor
-          return [...prev, validatedInstructor];
+          return [...prev, normalizedInstructor];
         }
       });
       
@@ -925,7 +982,7 @@ export const ClassScheduleProvider = ({ children }) => {
       // Use a setTimeout to ensure this happens after state update
       setTimeout(() => {
         try {
-          localStorage.setItem('instructors', JSON.stringify([...instructors, validatedInstructor]));
+          localStorage.setItem('instructors', JSON.stringify([...instructors, normalizedInstructor]));
         } catch (e) {
           console.error('Failed to save to localStorage:', e);
         }
@@ -938,14 +995,14 @@ export const ClassScheduleProvider = ({ children }) => {
       const { data: verifyData, error: verifyError } = await supabase
         .from('instructors')
         .select('*')
-        .eq('id', validatedInstructor.id)
+        .eq('id', normalizedInstructor.id)
         .single();
         
       if (verifyError) {
         console.error('Error verifying instructor save:', verifyError);
       }
       
-      return validatedInstructor.id; // Return the ID for reference
+      return normalizedInstructor.id; // Return the ID for reference
     } catch (err) {
       console.error('Error adding instructor:', err);
       return null;
@@ -957,6 +1014,9 @@ export const ClassScheduleProvider = ({ children }) => {
     try {
       // Validate the updated data
       const validatedUpdates = validateInstructorData({ ...updatedData, id });
+      
+      // Normalize availability data - ADD THIS LINE
+      const normalizedUpdates = normalizeAvailabilityData(validatedUpdates);
       
       // Save current state for history/undo
       const currentInstructors = [...instructors];
@@ -972,7 +1032,7 @@ export const ClassScheduleProvider = ({ children }) => {
         const newInstructors = [...prev];
         newInstructors[instructorIndex] = {
           ...prev[instructorIndex],
-          ...validatedUpdates
+          ...normalizedUpdates  // CHANGE THIS FROM validatedUpdates TO normalizedUpdates
         };
         
         return newInstructors;

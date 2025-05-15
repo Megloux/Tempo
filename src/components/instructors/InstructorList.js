@@ -11,50 +11,63 @@ const InstructorList = ({
   getWorkloadPercentage,
   getAssignedClassesCount
 }) => {
+  // Ensure instructors is always an array
+  const safeInstructors = Array.isArray(instructors) ? instructors : [];
+  
+  // If no instructors, show a message
+  if (safeInstructors.length === 0) {
+    return (
+      <div className="p-8 text-center bg-gray-50 rounded-md">
+        <p className="text-black font-medium mb-4">No instructors found.</p>
+        <p className="text-sm text-black">Register new instructors using the Registration form.</p>
+      </div>
+    );
+  }
+  
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border">
         <thead>
           <tr className="bg-gray-200">
-            <th className="py-3 px-4 border-b">ID</th>
-            <th className="py-3 px-4 border-b">Name</th>
-            <th className="py-3 px-4 border-b">Email</th>
-            <th className="py-3 px-4 border-b">Class Types</th>
-            <th className="py-3 px-4 border-b text-center">Block Size</th>
-            <th className="py-3 px-4 border-b text-center">Min Classes</th>
-            <th className="py-3 px-4 border-b text-center">Max Classes</th>
-            <th className="py-3 px-4 border-b">Workload</th>
-            <th className="py-3 px-4 border-b text-center">Actions</th>
+            <th className="py-3 px-4 border-b text-black font-bold">ID</th>
+            <th className="py-3 px-4 border-b text-black font-bold">Name</th>
+            <th className="py-3 px-4 border-b text-black font-bold">Email</th>
+            <th className="py-3 px-4 border-b text-black font-bold">Class Types</th>
+            <th className="py-3 px-4 border-b text-black font-bold text-center">Block Size</th>
+            <th className="py-3 px-4 border-b text-black font-bold text-center">Min Classes</th>
+            <th className="py-3 px-4 border-b text-black font-bold text-center">Max Classes</th>
+            <th className="py-3 px-4 border-b text-black font-bold">Workload</th>
+            <th className="py-3 px-4 border-b text-black font-bold text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {instructors.map(instructor => (
+          {safeInstructors.map(instructor => (
             <tr 
               key={instructor.id} 
               className="hover:bg-gray-50"
             >
-              <td className="py-3 px-4 border-b cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.id}
               </td>
-              <td className="py-3 px-4 border-b cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.name}
               </td>
-              <td className="py-3 px-4 border-b cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.email}
               </td>
-              <td className="py-3 px-4 border-b cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.classTypes.join(', ')}
               </td>
-              <td className="py-3 px-4 border-b text-center cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b text-center cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.blockSize}
               </td>
-              <td className="py-3 px-4 border-b text-center cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b text-center cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.minClasses}
               </td>
-              <td className="py-3 px-4 border-b text-center cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b text-center cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 {instructor.maxClasses}
               </td>
-              <td className="py-3 px-4 border-b cursor-pointer" onClick={() => onSelectInstructor(instructor.id)}>
+              <td className="py-3 px-4 border-b cursor-pointer text-black" onClick={() => onSelectInstructor(instructor.id)}>
                 <div className="flex items-center">
                   <div className="w-full bg-gray-200 rounded-full h-2.5">
                     <div 
@@ -66,7 +79,7 @@ const InstructorList = ({
                       style={{ width: `${getWorkloadPercentage(instructor.id)}%` }}
                     ></div>
                   </div>
-                  <span className="ml-2 text-sm">
+                  <span className="ml-2 text-sm text-black font-medium">
                     {getAssignedClassesCount(instructor.id)}/{instructor.maxClasses}
                   </span>
                 </div>

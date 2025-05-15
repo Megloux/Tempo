@@ -94,80 +94,53 @@ const InstructorManagement = () => {
             });
           });
           
-          // First, find which time slots actually have scheduled classes
-          const scheduledClassTimes = {};
+          // First, check which slots are VALID for this instructor's class types
+          const validSlots = new Set();
           DAYS_OF_WEEK.forEach(day => {
-            scheduledClassTimes[day] = new Set();
-            CLASS_TYPES.forEach(type => {
-              CLASS_TIMES.forEach(time => {
-                if (schedule[day]?.[type]?.[time] !== undefined && 
-                    schedule[day][type][time] !== null) {
-                  scheduledClassTimes[day].add(time);
-                }
-              });
+            instructor.classTypes.forEach(classType => {
+              if (VALID_CLASS_SLOTS[day]?.[classType]) {
+                VALID_CLASS_SLOTS[day][classType].forEach(time => {
+                  validSlots.add(`${day}-${time}`);
+                });
+              }
             });
           });
           
-          // Process instructor's availability
-          if (instructor.availability && instructor.availability.length > 0) {
-            // First, mark all slots from the instructor's availability
+          // Mark slots as available based on instructor's availability
+          if (Array.isArray(instructor.availability) && instructor.availability.length > 0) {
+            // Use explicit availability data
             instructor.availability.forEach(slot => {
               const [day, time] = slot.split('-');
-              if (availabilityGrid[day] && CLASS_TIMES.includes(time)) {
-                // Check if this time slot is valid for any class type the instructor can teach
-                let isValidForInstructor = false;
-                for (const classType of instructor.classTypes) {
-                  if (VALID_CLASS_SLOTS[day]?.[classType]?.has(time)) {
-                    isValidForInstructor = true;
-                    break;
-                  }
-                }
+              
+              // Only mark as available if it's a valid slot for this instructor
+              if (validSlots.has(slot) && availabilityGrid[day]) {
+                availabilityGrid[day][time] = true;
                 
-                // Mark as available if this is in the instructor's availability
-                // AND this time slot is valid for any class type they can teach
-                if (isValidForInstructor) {
-                  availabilityGrid[day][time] = true;
-                  
-                  // Set class type preference if available
-                  if (instructor.classTypePreferences && 
-                      instructor.classTypePreferences[slot]) {
-                    const preferredType = instructor.classTypePreferences[slot];
-                    if (instructor.classTypes.includes(preferredType)) {
-                      classTypeGrid[day][time] = preferredType;
-                    }
+                // Set class type preference if available
+                if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
+                  const preferredType = instructor.classTypePreferences[slot];
+                  if (instructor.classTypes.includes(preferredType)) {
+                    classTypeGrid[day][time] = preferredType;
                   }
                 }
               }
             });
           } else if (instructor.unavailability && instructor.unavailability.slots) {
-            // Fallback to using unavailability data if no explicit availability
-            DAYS_OF_WEEK.forEach(day => {
-              CLASS_TIMES.forEach(time => {
-                // Check if this time slot is valid for any class type the instructor can teach
-                let isValidForInstructor = false;
-                for (const classType of instructor.classTypes) {
-                  if (VALID_CLASS_SLOTS[day]?.[classType]?.has(time)) {
-                    isValidForInstructor = true;
-                    break;
-                  }
-                }
-                
-                // Only consider valid time slots for this instructor
-                if (isValidForInstructor) {
-                  const slot = `${day}-${time}`;
-                  const isUnavailable = instructor.unavailability.slots.includes(slot);
-                  availabilityGrid[day][time] = !isUnavailable;
-                  
-                  // Set class type preference if available
-                  if (!isUnavailable && instructor.classTypePreferences && 
-                      instructor.classTypePreferences[slot]) {
-                    const preferredType = instructor.classTypePreferences[slot];
-                    if (instructor.classTypes.includes(preferredType)) {
-                      classTypeGrid[day][time] = preferredType;
-                    }
-                  }
-                }
-              });
+            // Fallback to using unavailability data
+            // Mark all valid slots as available first
+            validSlots.forEach(slot => {
+              const [day, time] = slot.split('-');
+              if (availabilityGrid[day]) {
+                availabilityGrid[day][time] = true;
+              }
+            });
+            
+            // Then mark unavailable slots
+            instructor.unavailability.slots.forEach(slot => {
+              const [day, time] = slot.split('-');
+              if (availabilityGrid[day]) {
+                availabilityGrid[day][time] = false;
+              }
             });
           }
           
@@ -182,7 +155,7 @@ const InstructorManagement = () => {
         }
       }
     }
-  }, [instructors, DAYS_OF_WEEK, CLASS_TIMES, toast]);
+  }, [instructors, DAYS_OF_WEEK, CLASS_TIMES, VALID_CLASS_SLOTS, toast]);
   
   // Handle availability checkbox change
   const handleAvailabilityChange = (day, time, isAvailable) => {
@@ -208,7 +181,7 @@ const InstructorManagement = () => {
   };
   
   // Save all availability changes at once
-  const saveAvailability = async () => {
+  const saveAvailability = () => {
     if (!selectedInstructor) return;
     
     try {
@@ -221,101 +194,76 @@ const InstructorManagement = () => {
       
       // Create a backup of the current instructor data
       const backupKey = `instructor_backup_${instructor.id}`;
-      try {
-        localStorage.setItem(backupKey, JSON.stringify(instructor));
-      } catch (e) {
-        console.warn('Failed to create backup:', e);
-      }
+      localStorage.setItem(backupKey, JSON.stringify(instructor));
       
       // Convert the availability grid to an array of available slots
       const availabilitySlots = [];
       // Track class type preferences for each available slot
       const classTypePreferences = {};
       
-      // First, preserve all existing availability slots that aren't in the current view
-      // This ensures we don't lose availability data for slots that aren't currently displayed
-      if (instructor.availability && Array.isArray(instructor.availability)) {
-        instructor.availability.forEach(slot => {
-          const [day, time] = slot.split('-');
-          
-          // If this slot isn't in our current view (not a scheduled class time),
-          // preserve it in the availability array
-          if (!instructorAvailability[day] || instructorAvailability[day][time] === undefined) {
-            availabilitySlots.push(slot);
-            
-            // Also preserve any class type preferences for this slot
-            if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
-              classTypePreferences[slot] = instructor.classTypePreferences[slot];
-            }
+      // First determine which slots are valid for this instructor
+      const validSlots = new Set();
+      DAYS_OF_WEEK.forEach(day => {
+        instructor.classTypes.forEach(classType => {
+          if (VALID_CLASS_SLOTS[day]?.[classType]) {
+            VALID_CLASS_SLOTS[day][classType].forEach(time => {
+              validSlots.add(`${day}-${time}`);
+            });
           }
         });
-      }
+      });
       
-      // Now process the availability grid for slots in the current view
+      // Process the current availability UI state
       Object.entries(instructorAvailability).forEach(([day, times]) => {
         Object.entries(times).forEach(([time, isAvailable]) => {
-          if (isAvailable) {
-            const slotKey = `${day}-${time}`;
-            // Only add if not already added from preserved slots
-            if (!availabilitySlots.includes(slotKey)) {
-              availabilitySlots.push(slotKey);
-            }
+          const slotKey = `${day}-${time}`;
+          
+          // Only include if:
+          // 1. It's marked as available in the UI
+          // 2. It's a valid slot for this instructor's class types
+          if (isAvailable && validSlots.has(slotKey)) {
+            availabilitySlots.push(slotKey);
             
-            // Store class type preference for this slot
-            const classType = instructorClassTypes[day]?.[time] || '';
+            // Store class type preference
+            const classType = instructorClassTypes[day]?.[time];
             if (classType && instructor.classTypes.includes(classType)) {
               classTypePreferences[slotKey] = classType;
             } else if (instructor.classTypes.length > 0) {
-              // Default to first class type if none selected or invalid
+              // Default to first class type if needed
               classTypePreferences[slotKey] = instructor.classTypes[0];
             }
           }
         });
       });
       
-      // Create updated instructor with new availability and class type preferences
+      // Preserve existing preferences for slots not in the UI
+      if (instructor.classTypePreferences) {
+        Object.entries(instructor.classTypePreferences).forEach(([slot, type]) => {
+          // If this slot isn't in our current view but is in the instructor's availability
+          if (!classTypePreferences[slot] && availabilitySlots.includes(slot)) {
+            classTypePreferences[slot] = type;
+          }
+        });
+      }
+      
+      // Create updated instructor data
       const updatedInstructor = {
         ...instructor,
         availability: availabilitySlots,
         classTypePreferences: classTypePreferences
       };
       
-      // Validate the data before saving
-      const validatedInstructor = validateInstructorData ? validateInstructorData(updatedInstructor) : updatedInstructor;
-      
-      // First, try to save directly to Supabase for reliability
-      try {
-        const { supabase } = window;
-        if (supabase) {
-          const result = await supabase.from('instructors').upsert(
-            validatedInstructor,
-            { onConflict: 'id' }
-          );
-          
-          if (result.error) {
-            console.error('Error saving directly to Supabase:', result.error);
-            throw new Error('Failed to save to database');
-          }
-        }
-      } catch (e) {
-        console.warn('Direct Supabase save failed, falling back to context update:', e);
-      }
-      
-      // Also update through the context (which may also save to Supabase)
-      const success = updateInstructor(selectedInstructor, validatedInstructor);
+      // Update the instructor
+      const success = updateInstructor(selectedInstructor, updatedInstructor);
       
       if (success) {
-        // Ensure class type selections are preserved in the UI
-        setInstructorClassTypes({...instructorClassTypes});
-        
-        // Show success message with toast
         toast.success(`Availability for ${instructor.name} has been saved successfully`);
       } else {
         toast.error('Failed to save instructor availability');
       }
     } catch (error) {
-      console.error('Error saving instructor availability:', error);
-      toast.error(`Error saving availability: ${error.message || 'Unknown error'}`);
+      console.error('Error saving availability:', error);
+      toast.error('Failed to save changes');
     }
   };
   

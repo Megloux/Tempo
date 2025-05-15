@@ -16,8 +16,8 @@ const AvailabilityGrid = ({
 }) => {
   if (!instructor) {
     return (
-      <div className="text-center py-8 text-gray-500">
-        <p>Select an instructor to manage their availability</p>
+      <div className="text-center py-8">
+        <p className="text-black font-medium">Select an instructor to manage their availability</p>
       </div>
     );
   }
@@ -27,9 +27,9 @@ const AvailabilityGrid = ({
       <table className="min-w-full bg-white border border-gray-200">
         <thead>
           <tr>
-            <th className="py-2 px-2 md:px-4 border-b text-xs md:text-sm">Time</th>
+            <th className="py-2 px-2 md:px-4 border-b text-xs md:text-sm font-bold text-black">Time</th>
             {daysOfWeek.map(day => (
-              <th key={day} className="py-2 px-2 md:px-4 border-b text-xs md:text-sm">
+              <th key={day} className="py-2 px-2 md:px-4 border-b text-xs md:text-sm font-bold text-black">
                 {formatDay(day, isMobile)}
               </th>
             ))}
@@ -38,7 +38,7 @@ const AvailabilityGrid = ({
         <tbody>
           {classTimes.map(time => (
             <tr key={time}>
-              <td className="py-1 md:py-2 px-2 md:px-4 border-b border-r font-medium text-xs md:text-sm">
+              <td className="py-1 md:py-2 px-2 md:px-4 border-b border-r font-medium text-xs md:text-sm text-black">
                 {formatTime(time, isMobile)}
               </td>
               {daysOfWeek.map(day => {
@@ -61,7 +61,7 @@ const AvailabilityGrid = ({
                         <select
                           value={classType}
                           onChange={(e) => onClassTypeChange(day, time, e.target.value)}
-                          className="text-xs p-1 border rounded w-full max-w-[80px]"
+                          className="text-xs p-1 border rounded w-full max-w-[80px] text-black"
                         >
                           {instructor.classTypes.map(type => (
                             <option key={type} value={type}>
