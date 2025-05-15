@@ -600,34 +600,14 @@ export const ClassScheduleProvider = ({ children }) => {
             // Check if this assignment is locked
             const lockedInstructorId = lockedAssignments[day]?.[type]?.[time];
             if (lockedInstructorId) {
-              // Get the instructor object to check availability
-              const instructor = instructors.find(i => i.id === lockedInstructorId);
-              const instructorExists = instructor !== undefined;
-              
-              // Log for debugging
-              console.log(`Checking locked assignment: ${day} ${time} ${type} - ${lockedInstructorId}`);
-              
-              // Check if instructor is still available
-              let stillAvailable = false;
+              // Ensure the locked instructor is still in the system
+              const instructorExists = instructors.some(i => i.id === lockedInstructorId);
               if (instructorExists) {
-                stillAvailable = !isInstructorUnavailable(instructor, day, time);
-                console.log(`Instructor ${lockedInstructorId} availability for ${day} ${time}: ${stillAvailable ? 'Available' : 'Unavailable'}`);
-              }
-              
-              if (instructorExists && stillAvailable) {
-                // Honor the locked assignment
+                // Force this assignment to use the locked instructor
                 newSchedule[day][type][time] = lockedInstructorId;
+                // Mark this time slot as taken for this instructor
                 instructorTimeSlots[lockedInstructorId][day][time] = true;
                 instructorAssignments[lockedInstructorId]++;
-                console.log(`Honored locked assignment: ${day} ${time} ${type} - ${lockedInstructorId}`);
-              } else {
-                // Instructor doesn't exist or is no longer available
-                console.log(`Cannot honor locked assignment for ${lockedInstructorId} on ${day} at ${time} - marking as TBD`);
-                newSchedule[day][type][time] = 'TBD';
-                
-                // Remove the lock since it's no longer valid
-                console.log(`Unlocking invalid assignment: ${day} ${time} ${type}`);
-                unlockAssignment(day, type, time);
               }
             } else {
               // For non-locked assignments, preserve existing assignments that aren't TBD
@@ -835,72 +815,35 @@ export const ClassScheduleProvider = ({ children }) => {
 
   // Check if instructor is unavailable for a specific day and time
   function isInstructorUnavailable(instructor, day, time) {
-    // Log the availability check for debugging
-    console.log(`Checking availability for ${instructor.id} on ${day} at ${time}`);
-    console.log(`Availability data:`, instructor.availability);
-    console.log(`Unavailability data:`, instructor.unavailability);
-    
     // First check if we have explicit availability data
     if (Array.isArray(instructor.availability) && instructor.availability.length > 0) {
-      const slotKey = `${day}-${time}`;
-      const isAvailable = instructor.availability.includes(slotKey);
-      console.log(`Explicit availability for ${slotKey}: ${isAvailable}`);
-      return !isAvailable;
+      // If we have explicit availability data, instructor is unavailable if this slot is not in their availability
+      return !instructor.availability.includes(`${day}-${time}`);
     }
     
-    // Check unavailability data if it exists
-    if (instructor.unavailability) {
-      // Check day unavailability
-      if (instructor.unavailability.days && instructor.unavailability.days.includes(day)) {
-        console.log(`Day ${day} is marked unavailable`);
-        return true;
-      }
-      
-      // Check specific time slot unavailability
-      const slotKey = `${day}-${time}`;
-      if (instructor.unavailability.slots && instructor.unavailability.slots.includes(slotKey)) {
-        console.log(`Slot ${slotKey} is marked unavailable`);
-        return true;
-      }
-      
-      // Check time range unavailability
-      if (instructor.unavailability.timeRanges) {
-        for (const range of instructor.unavailability.timeRanges) {
-          if (range.days.includes(day) && isTimeInRange(time, range.startTime, range.endTime)) {
-            console.log(`Time ${time} is in unavailable range`);
-            return true;
-          }
+    // Fall back to the old unavailability checks if no explicit availability data exists
+    if (!instructor.unavailability) return false;
+    
+    // Check day unavailability
+    if (instructor.unavailability.days && instructor.unavailability.days.includes(day)) {
+      return true;
+    }
+    
+    // Check specific time slot unavailability
+    if (instructor.unavailability.slots && instructor.unavailability.slots.includes(`${day}-${time}`)) {
+      return true;
+    }
+    
+    // Check time range unavailability
+    if (instructor.unavailability.timeRanges) {
+      for (const range of instructor.unavailability.timeRanges) {
+        if (range.days.includes(day) && isTimeInRange(time, range.startTime, range.endTime)) {
+          return true;
         }
       }
     }
     
-    // BACKWARD COMPATIBILITY: Special handling for existing instructors with empty availability
-    // This preserves expected behavior for instructors like Aseel (AD)
-    if (instructor.id === 'AD') {
-      // For Aseel, we know she teaches Tuesday 5:30 AM Lagree
-      if (day === 'Tues' && time === '5:30 AM') {
-        console.log(`Special case: Allowing Aseel for Tuesday 5:30 AM`);
-        return false; // Not unavailable
-      }
-    }
-    
-    // For initial instructors from INITIAL_INSTRUCTORS with empty availability,
-    // maintain backward compatibility by keeping them available for their known slots
-    if (INITIAL_INSTRUCTORS.some(i => i.id === instructor.id)) {
-      // If this is a common time slot for this instructor's class types
-      const isCommonTimeSlot = instructor.classTypes.some(classType => 
-        VALID_CLASS_SLOTS[day]?.[classType]?.has(time)
-      );
-      
-      if (isCommonTimeSlot) {
-        console.log(`Initial instructor ${instructor.id} allowed for common time slot ${day} ${time}`);
-        return false; // Not unavailable
-      }
-    }
-    
-    // NEW DEFAULT BEHAVIOR: If no availability is specified, assume unavailable
-    console.log(`No availability specified for ${instructor.id} on ${day} at ${time} - marking as unavailable`);
-    return true;
+    return false;
   }
 
   // Helper to check if a time is within a range
