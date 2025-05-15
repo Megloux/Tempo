@@ -119,13 +119,28 @@ const EditInstructorModal = ({
   const handleAvailabilityChange = (day, time, checked) => {
     console.log(`Availability change: ${day} ${time} = ${checked}`);
     
-    setAvailabilityGrid(prev => ({
-      ...prev,
-      [day]: {
-        ...(prev[day] || {}),
-        [time]: checked
+    // Force a re-render by using a new object reference
+    setAvailabilityGrid(prev => {
+      // Create a new object to ensure React detects the change
+      const newGrid = JSON.parse(JSON.stringify(prev));
+      
+      // Ensure the day exists
+      if (!newGrid[day]) newGrid[day] = {};
+      
+      // Set the value
+      newGrid[day][time] = checked;
+      
+      console.log('Updated grid:', newGrid);
+      return newGrid;
+    });
+    
+    // Double-check the DOM element is correctly checked
+    setTimeout(() => {
+      const checkbox = document.getElementById(`availability-${day}-${time}`);
+      if (checkbox && checkbox.checked !== checked) {
+        checkbox.checked = checked;
       }
-    }));
+    }, 10);
   };
   
   // Convenience function to check if a slot is available
@@ -310,7 +325,12 @@ const EditInstructorModal = ({
                                 type="checkbox"
                                 id={`availability-${day}-${time}`}
                                 checked={isSlotAvailable(day, time)}
-                                onChange={(e) => handleAvailabilityChange(day, time, e.target.checked)}
+                                onChange={(e) => {
+                                  // Force the DOM element to update visually
+                                  document.getElementById(`availability-${day}-${time}`).checked = e.target.checked;
+                                  // Then update state
+                                  handleAvailabilityChange(day, time, e.target.checked);
+                                }}
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                               />
                             </td>
