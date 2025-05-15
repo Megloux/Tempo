@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useClassSchedule } from '../context/ClassScheduleContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import * as XLSX from 'xlsx';
 
 const Dashboard = () => {
   const { 
@@ -47,6 +48,156 @@ const Dashboard = () => {
   useEffect(() => {
     setRefreshKey(prevKey => prevKey + 1);
   }, [schedule]);
+  
+  const exportToExcel = () => {
+    // Create instructor color mapping for consistent colors
+    const instructorColors = {};
+    const colorPalette = [
+      { bg: 'FFD4E5F7', font: '000000' }, // Light blue
+      { bg: 'FFD4F7E5', font: '000000' }, // Light green
+      { bg: 'FFF7E5D4', font: '000000' }, // Light orange
+      { bg: 'FFE5D4F7', font: '000000' }, // Light purple
+      { bg: 'FFF7D4E5', font: '000000' }, // Light pink
+      { bg: 'FFE5F7D4', font: '000000' }, // Light lime
+      { bg: 'FFDAE8FC', font: '000000' }, // Lighter blue
+      { bg: 'FFFCDAE8', font: '000000' }  // Lighter pink
+    ];
+    
+    let colorIndex = 0;
+    instructors.forEach(instructor => {
+      instructorColors[instructor.id] = colorPalette[colorIndex % colorPalette.length];
+      colorIndex++;
+    });
+    
+    // Create a workbook with separate sheets for All Classes, Lagree, and Strength
+    const wb = XLSX.utils.book_new();
+    
+    // Function to create a sheet for a specific class type or all classes
+    const createSheet = (classTypeFilter = null) => {
+      const sheetName = classTypeFilter || 'All Classes';
+      const exportData = [];
+      
+      // Header row with days
+      const headerRow = ['Time', ...DAYS_OF_WEEK];
+      exportData.push(headerRow);
+      
+      // Get all scheduled time slots
+      const scheduledTimeSlots = getScheduledTimeSlots();
+      
+      // For each time slot
+      scheduledTimeSlots.forEach(time => {
+        // We'll create multiple rows if needed for this time slot
+        // First, determine the maximum number of classes at this time for any day
+        let maxClassesPerDay = 0;
+        
+        DAYS_OF_WEEK.forEach(day => {
+          // Count classes at this time slot for this day
+          const classCount = CLASS_TYPES.filter(type => {
+            // If we're filtering by class type, only count that type
+            if (classTypeFilter && type !== classTypeFilter) return false;
+            
+            const instructorId = schedule[day]?.[type]?.[time];
+            return instructorId !== undefined && instructorId !== null;
+          }).length;
+          
+          maxClassesPerDay = Math.max(maxClassesPerDay, classCount);
+        });
+        
+        // Now create rows for this time slot (one class per row)
+        for (let rowIndex = 0; rowIndex < maxClassesPerDay; rowIndex++) {
+          const row = rowIndex === 0 ? [time] : [''];
+          
+          // For each day of the week
+          DAYS_OF_WEEK.forEach(day => {
+            // Get classes for this day and time
+            const classesAtTime = CLASS_TYPES.filter(type => {
+              // If we're filtering by class type, only include that type
+              if (classTypeFilter && type !== classTypeFilter) return false;
+              
+              const instructorId = schedule[day]?.[type]?.[time];
+              return instructorId !== undefined && instructorId !== null;
+            }).map(type => {
+              const instructorId = schedule[day]?.[type]?.[time];
+              
+              // Get instructor name
+              const instructor = instructors.find(i => i.id === instructorId) || {};
+              const instructorName = instructorId === 'TBD' ? 'TBD' : instructor.name || instructorId;
+              
+              return { type, instructorId, instructorName };
+            });
+            
+            // Add the class at this row index, or empty cell if none
+            if (rowIndex < classesAtTime.length) {
+              const classInfo = classesAtTime[rowIndex];
+              row.push(`${classInfo.type} - ${classInfo.instructorName}`);
+            } else {
+              row.push('');
+            }
+          });
+          
+          exportData.push(row);
+        }
+      });
+      
+      // Create a worksheet
+      const ws = XLSX.utils.aoa_to_sheet(exportData);
+      
+      // Set column widths for better readability
+      const colWidths = [
+        {wch: 10}, // Time column
+        {wch: 20}, {wch: 20}, {wch: 20}, {wch: 20}, {wch: 20}, {wch: 20}, {wch: 20} // Day columns
+      ];
+      ws['!cols'] = colWidths;
+      
+      // Add cell styling for instructor colors
+      if (ws['!ref']) {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        
+        // Start from row 1 (skip header)
+        for (let R = 1; R <= range.e.r; ++R) {
+          // Start from column 1 (skip time column)
+          for (let C = 1; C <= range.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
+            const cellValue = ws[cellAddress]?.v;
+            
+            if (cellValue) {
+              // Extract instructor ID from cell value
+              const parts = cellValue.split(' - ');
+              if (parts.length === 2) {
+                const instructorName = parts[1];
+                const instructor = instructors.find(i => 
+                  i.name === instructorName || i.id === instructorName
+                );
+                
+                if (instructor && instructorColors[instructor.id]) {
+                  // Apply color styling based on instructor
+                  const color = instructorColors[instructor.id];
+                  if (!ws[cellAddress].s) ws[cellAddress].s = {};
+                  ws[cellAddress].s.fill = { fgColor: { rgb: color.bg } };
+                  ws[cellAddress].s.font = { color: { rgb: color.font } };
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      return { name: sheetName, worksheet: ws };
+    };
+    
+    // Create sheets for all classes and specific class types
+    const allClassesSheet = createSheet();
+    const lagreeSheet = createSheet('Lagree');
+    const strengthSheet = createSheet('Strength');
+    
+    // Add sheets to workbook
+    XLSX.utils.book_append_sheet(wb, allClassesSheet.worksheet, allClassesSheet.name);
+    XLSX.utils.book_append_sheet(wb, lagreeSheet.worksheet, lagreeSheet.name);
+    XLSX.utils.book_append_sheet(wb, strengthSheet.worksheet, strengthSheet.name);
+    
+    // Generate Excel file and trigger download
+    XLSX.writeFile(wb, 'Tempo_Fitness_Schedule.xlsx');
+  };
   
   // Get all unique time slots that have valid classes across all days and types
   const getScheduledTimeSlots = () => {
@@ -602,7 +753,10 @@ const Dashboard = () => {
             ))}
           </select>
         </div>
-        <button className="btn-outline flex items-center gap-2 py-2 px-4">
+        <button 
+          onClick={exportToExcel}
+          className="btn-outline flex items-center gap-2 py-2 px-4"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
           </svg>
