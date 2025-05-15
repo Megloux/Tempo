@@ -6,20 +6,23 @@ const Dashboard = () => {
   const { 
     schedule, 
     instructors, 
-    CLASS_TYPES, 
-    DAYS_OF_WEEK, 
-    CLASS_TIMES,
     addClass, 
     removeClass,
     clearSchedule, 
     addPredefinedClasses, 
     generateSchedule,
+    manuallyAssignInstructor,
+    DAYS_OF_WEEK, 
+    CLASS_TYPES,
+    CLASS_TIMES,
+    VALID_CLASS_SLOTS,
+    isValidClassSlot,
+    convertTimeToMinutes,
     getTotalAssignedClasses,
     getTotalScheduledSlots,
     lockAssignment,
     unlockAssignment,
-    isAssignmentLocked,
-    manuallyAssignInstructor
+    isAssignmentLocked
   } = useClassSchedule();
   
   const [selectedClassType, setSelectedClassType] = useState('all');
@@ -44,6 +47,34 @@ const Dashboard = () => {
   useEffect(() => {
     setRefreshKey(prevKey => prevKey + 1);
   }, [schedule]);
+  
+  // Get all unique time slots that have valid classes across all days and types
+  const getScheduledTimeSlots = () => {
+    // Use VALID_CLASS_SLOTS as the source of truth for which time slots should exist
+    const allTimeSlots = new Set();
+    
+    // Loop through all days and class types to find valid time slots
+    DAYS_OF_WEEK.forEach(day => {
+      CLASS_TYPES.forEach(type => {
+        // Get the valid time slots for this day and type from our source of truth
+        if (VALID_CLASS_SLOTS[day]?.[type]) {
+          // Add all valid times for this day and type
+          VALID_CLASS_SLOTS[day][type].forEach(time => {
+            allTimeSlots.add(time);
+          });
+        }
+      });
+    });
+    
+    // Convert to array and sort by time
+    return Array.from(allTimeSlots).sort((a, b) => {
+      // Convert times to minutes for proper sorting
+      return convertTimeToMinutes(a) - convertTimeToMinutes(b);
+    });
+  };
+  
+  // Get the filtered list of time slots that have scheduled classes
+  const scheduledTimeSlots = getScheduledTimeSlots();
   
   const handleClassInputChange = (e) => {
     const { name, value } = e.target;
@@ -467,7 +498,7 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {CLASS_TIMES.map(time => (
+              {scheduledTimeSlots.map(time => (
                 <tr key={time} className="border-b border-dark-border/50 hover:bg-dark-hover/30 transition-colors">
                   <td className="py-3 px-4 font-medium sticky left-0 bg-dark-card z-10 text-white">{time}</td>
                   {DAYS_OF_WEEK.map(day => (

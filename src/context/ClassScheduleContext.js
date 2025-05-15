@@ -14,6 +14,65 @@ const CLASS_TIMES = [
   '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM'
 ];
 
+// VALID CLASS SLOTS - This is the source of truth for which time slots should have classes
+// Extracted from the addPredefinedClasses function to be used as a constraint throughout the app
+const VALID_CLASS_SLOTS = {
+  'Sun': {
+    'Lagree': new Set(['9:00 AM', '10:00 AM', '11:00 AM']),
+    'Strength': new Set([]),
+    'Boxing': new Set([]),
+    'Stretch': new Set(['12:00 PM', '1:00 PM']),
+    'PT': new Set([])
+  },
+  'Mon': {
+    'Lagree': new Set(['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '5:30 PM', '6:30 PM']),
+    'Strength': new Set(['7:30 AM', '12:00 PM']),
+    'Boxing': new Set(['6:30 AM']),
+    'Stretch': new Set([]),
+    'PT': new Set([])
+  },
+  'Tues': {
+    'Lagree': new Set(['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '4:30 PM', '5:30 PM', '6:30 PM']),
+    'Strength': new Set(['6:30 AM', '12:00 PM', '5:30 PM', '6:30 PM']),
+    'Boxing': new Set([]),
+    'Stretch': new Set([]),
+    'PT': new Set([])
+  },
+  'Wed': {
+    'Lagree': new Set(['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '5:30 PM', '6:30 PM']),
+    'Strength': new Set(['7:30 AM', '12:00 PM']),
+    'Boxing': new Set(['6:30 AM']),
+    'Stretch': new Set([]),
+    'PT': new Set([])
+  },
+  'Thu': {
+    'Lagree': new Set(['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '4:30 PM', '5:30 PM', '6:30 PM']),
+    'Strength': new Set(['6:30 AM', '12:00 PM', '5:30 PM', '6:30 PM']),
+    'Boxing': new Set([]),
+    'Stretch': new Set([]),
+    'PT': new Set([])
+  },
+  'Fri': {
+    'Lagree': new Set(['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM']),
+    'Strength': new Set(['7:30 AM', '12:00 PM']),
+    'Boxing': new Set(['6:30 AM']),
+    'Stretch': new Set(['1:00 PM']),
+    'PT': new Set([])
+  },
+  'Sat': {
+    'Lagree': new Set(['7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM']),
+    'Strength': new Set(['9:00 AM', '10:00 AM', '11:00 AM']),
+    'Boxing': new Set(['8:00 AM']),
+    'Stretch': new Set([]),
+    'PT': new Set([])
+  }
+};
+
+// Helper function to check if a class should exist at a specific day, type, and time
+function isValidClassSlot(day, type, time) {
+  return VALID_CLASS_SLOTS[day]?.[type]?.has(time) || false;
+}
+
 // Initial instructor data
 const INITIAL_INSTRUCTORS = [
   { id: 'DB', name: 'Dayron', email: 'dayron@example.com', phone: '555-123-4567', classTypes: ['Lagree', 'Strength', 'Boxing', 'PT'], blockSize: 4, minClasses: 15, maxClasses: 20, availability: {}, unavailability: {} },
@@ -52,12 +111,33 @@ export const ClassScheduleProvider = ({ children }) => {
       // Clear any previous errors
       setError(null);
       
-      // Fetch instructors
+      // Get data from localStorage first as a fallback
+      let localInstructors = [];
+      let localSchedule = null;
+      let localLocks = {};
+      
+      try {
+        const savedInstructors = localStorage.getItem('instructors');
+        const savedSchedule = localStorage.getItem('schedule');
+        const savedLocks = localStorage.getItem('lockedAssignments');
+        
+        if (savedInstructors) localInstructors = JSON.parse(savedInstructors);
+        if (savedSchedule) localSchedule = JSON.parse(savedSchedule);
+        if (savedLocks) localLocks = JSON.parse(savedLocks);
+        
+        console.log('Loaded from localStorage:', { 
+          instructors: localInstructors.length, 
+          hasSchedule: !!localSchedule,
+          hasLocks: Object.keys(localLocks).length > 0
+        });
+      } catch (e) {
+        console.error('Error loading from localStorage:', e);
+      }
+      
+      // Fetch instructors from Supabase
       const { data: instructorsData, error: instructorsError } = await supabase
         .from('instructors')
         .select('*');
-      
-      if (instructorsError) throw instructorsError;
       
       // Fetch schedule
       const { data: scheduleData, error: scheduleError } = await supabase
@@ -71,10 +151,31 @@ export const ClassScheduleProvider = ({ children }) => {
         .select('*')
         .single();
       
-      // Update state with fetched data or use defaults
-      setInstructors(instructorsData?.length > 0 ? instructorsData : INITIAL_INSTRUCTORS);
-      setSchedule(scheduleData || initializeEmptySchedule());
-      setLockedAssignments(locksData?.assignments || {});
+      // Merge data from Supabase and localStorage
+      let mergedInstructors = [];
+      
+      // If we have Supabase data, use it as the base
+      if (!instructorsError && instructorsData && instructorsData.length > 0) {
+        console.log('Using Supabase instructors data:', instructorsData.length, 'instructors');
+        mergedInstructors = [...instructorsData];
+      } 
+      // Otherwise use localStorage data if available
+      else if (localInstructors.length > 0) {
+        console.log('Using localStorage instructors data:', localInstructors.length, 'instructors');
+        mergedInstructors = [...localInstructors];
+      }
+      // Fall back to initial data if nothing else is available
+      else {
+        console.log('Using initial instructors data');
+        mergedInstructors = [...INITIAL_INSTRUCTORS];
+      }
+      
+      // Update state with merged data
+      setInstructors(mergedInstructors);
+      setSchedule(scheduleData || localSchedule || initializeEmptySchedule());
+      setLockedAssignments((locksData?.assignments || localLocks || {}));
+      
+      console.log('Final instructors state:', mergedInstructors.length, 'instructors');
       
       // Ensure error state is cleared after successful data fetch
       setError(null);
@@ -260,61 +361,33 @@ export const ClassScheduleProvider = ({ children }) => {
 
   // Add predefined classes to the schedule
   function addPredefinedClasses() {
-    const newSchedule = JSON.parse(JSON.stringify(schedule));
+    // Create a clean schedule with only valid class slots
+    const newSchedule = initializeEmptySchedule();
     
-    // Sunday Classes
-    ['9:00 AM', '10:00 AM', '11:00 AM'].forEach(time => {
-      newSchedule['Sun']['Lagree'][time] = 'TBD';
-    });
-    ['12:00 PM', '1:00 PM'].forEach(time => {
-      newSchedule['Sun']['Stretch'][time] = 'TBD';
-    });
-    
-    // Monday and Wednesday Classes (same schedule)
-    ['Mon', 'Wed'].forEach(day => {
-      ['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '5:30 PM', '6:30 PM'].forEach(time => {
-        newSchedule[day]['Lagree'][time] = 'TBD';
-      });
-      ['7:30 AM', '12:00 PM'].forEach(time => {
-        newSchedule[day]['Strength'][time] = 'TBD';
-      });
-      newSchedule[day]['Boxing']['6:30 AM'] = 'TBD';
-    });
-    
-    // Tuesday and Thursday Classes (same schedule)
-    ['Tues', 'Thu'].forEach(day => {
-      ['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM', '4:30 PM', '5:30 PM', '6:30 PM'].forEach(time => {
-        newSchedule[day]['Lagree'][time] = 'TBD';
-      });
-      ['6:30 AM', '12:00 PM', '5:30 PM', '6:30 PM'].forEach(time => {
-        newSchedule[day]['Strength'][time] = 'TBD';
+    // Add all valid class slots from our source of truth
+    DAYS_OF_WEEK.forEach(day => {
+      CLASS_TYPES.forEach(type => {
+        if (VALID_CLASS_SLOTS[day]?.[type]) {
+          VALID_CLASS_SLOTS[day][type].forEach(time => {
+            // Set each valid class to TBD initially
+            newSchedule[day][type][time] = 'TBD';
+          });
+        }
       });
     });
-    
-    // Friday Classes
-    ['5:30 AM', '6:30 AM', '7:30 AM', '8:30 AM', '9:30 AM', '10:30 AM', '12:00 PM', '1:00 PM'].forEach(time => {
-      newSchedule['Fri']['Lagree'][time] = 'TBD';
-    });
-    ['7:30 AM', '12:00 PM'].forEach(time => {
-      newSchedule['Fri']['Strength'][time] = 'TBD';
-    });
-    newSchedule['Fri']['Boxing']['6:30 AM'] = 'TBD';
-    newSchedule['Fri']['Stretch']['1:00 PM'] = 'TBD';
-    
-    // Saturday Classes
-    ['7:00 AM', '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM'].forEach(time => {
-      newSchedule['Sat']['Lagree'][time] = 'TBD';
-    });
-    ['9:00 AM', '10:00 AM', '11:00 AM'].forEach(time => {
-      newSchedule['Sat']['Strength'][time] = 'TBD';
-    });
-    newSchedule['Sat']['Boxing']['8:00 AM'] = 'TBD';
     
     setSchedule(newSchedule);
   }
 
   // Add class to the schedule
   function addClass(day, type, time, instructorId = 'TBD') {
+    // First check if this is a valid class slot
+    // We only want to allow adding classes at valid time slots
+    if (!isValidClassSlot(day, type, time)) {
+      console.warn(`Cannot add class at invalid time slot: ${day} ${time} ${type}`);
+      return false;
+    }
+    
     setSchedule(prevSchedule => {
       // Use efficient cloning instead of JSON.parse/stringify
       const newSchedule = deepClone(prevSchedule);
@@ -338,6 +411,8 @@ export const ClassScheduleProvider = ({ children }) => {
       newSchedule[day][type][time] = instructorId;
       return newSchedule;
     });
+    
+    return true;
   }
   
   // Manually assign an instructor to a class
@@ -443,13 +518,43 @@ export const ClassScheduleProvider = ({ children }) => {
     return Boolean(lockedAssignments[day]?.[type]?.[time]);
   }
   
+  // Using the global VALID_CLASS_SLOTS defined at the top of the file
+
+  // Using the isValidClassSlot function defined at the top of the file
+
   // Generate schedule automatically
   function generateSchedule() {
-    // Create a deep copy of the current schedule
-    const newSchedule = JSON.parse(JSON.stringify(schedule));
+    // First, create a clean schedule with only valid class slots
+    const cleanSchedule = initializeEmptySchedule();
     
-    // Ensure all class type preferences are respected before generating
-    // This is critical for fixing the Boxing classes issue
+    // Add only the predefined classes to the clean schedule
+    DAYS_OF_WEEK.forEach(day => {
+      CLASS_TYPES.forEach(type => {
+        if (VALID_CLASS_SLOTS[day]?.[type]) {
+          VALID_CLASS_SLOTS[day][type].forEach(time => {
+            // Set each valid class to TBD initially
+            cleanSchedule[day][type][time] = 'TBD';
+          });
+        }
+      });
+    });
+    
+    // Copy over any existing instructor assignments for valid classes
+    DAYS_OF_WEEK.forEach(day => {
+      CLASS_TYPES.forEach(type => {
+        CLASS_TIMES.forEach(time => {
+          // Only copy assignments for valid class slots
+          if (isValidClassSlot(day, type, time) && schedule[day]?.[type]?.[time] && schedule[day][type][time] !== 'TBD') {
+            cleanSchedule[day][type][time] = schedule[day][type][time];
+          }
+        });
+      });
+    });
+    
+    // Now we have a clean schedule with only valid classes and existing assignments
+    const newSchedule = JSON.parse(JSON.stringify(cleanSchedule));
+    
+    // Apply instructor preferences, but only for valid class slots
     instructors.forEach(instructor => {
       if (instructor.classTypePreferences) {
         Object.entries(instructor.classTypePreferences).forEach(([slotKey, classType]) => {
@@ -458,13 +563,13 @@ export const ClassScheduleProvider = ({ children }) => {
           // Skip if the instructor can't teach this class type
           if (!instructor.classTypes.includes(classType)) return;
           
-          // Force assign this class type to this instructor
-          if (!newSchedule[day]) newSchedule[day] = {};
-          if (!newSchedule[day][classType]) newSchedule[day][classType] = {};
-          newSchedule[day][classType][time] = instructor.id;
-          
-          // Lock this assignment to ensure it doesn't change
-          lockAssignment(day, classType, time);
+          // ONLY assign instructor if this is a valid class slot
+          if (isValidClassSlot(day, classType, time)) {
+            newSchedule[day][classType][time] = instructor.id;
+            
+            // Lock this assignment to ensure it doesn't change
+            lockAssignment(day, classType, time);
+          }
         });
       }
     });
@@ -485,33 +590,38 @@ export const ClassScheduleProvider = ({ children }) => {
     });
     
     // First pass: preserve locked assignments and existing assignments that aren't TBD
+    // BUT ONLY FOR VALID CLASS SLOTS
     DAYS_OF_WEEK.forEach(day => {
       CLASS_TYPES.forEach(type => {
-        CLASS_TIMES.forEach(time => {
-          // Check if this assignment is locked
-          const lockedInstructorId = lockedAssignments[day]?.[type]?.[time];
-          if (lockedInstructorId) {
-            // Ensure the locked instructor is still in the system
-            const instructorExists = instructors.some(i => i.id === lockedInstructorId);
-            if (instructorExists) {
-              // Force this assignment to use the locked instructor
-              newSchedule[day][type][time] = lockedInstructorId;
-              // Mark this time slot as taken for this instructor
-              instructorTimeSlots[lockedInstructorId][day][time] = true;
-              instructorAssignments[lockedInstructorId]++;
-            }
-          } else {
-            // For non-locked assignments, preserve existing assignments that aren't TBD
-            const instructorId = newSchedule[day]?.[type]?.[time];
-            if (instructorId && instructorId !== 'TBD') {
-              // Mark this time slot as taken for this instructor
-              if (instructorTimeSlots[instructorId]) {
-                instructorTimeSlots[instructorId][day][time] = true;
-                instructorAssignments[instructorId]++;
+        // CRITICAL FIX: Only process valid class slots from our source of truth
+        if (VALID_CLASS_SLOTS[day]?.[type]) {
+          // Use the valid slots from VALID_CLASS_SLOTS instead of all CLASS_TIMES
+          VALID_CLASS_SLOTS[day][type].forEach(time => {
+            // Check if this assignment is locked
+            const lockedInstructorId = lockedAssignments[day]?.[type]?.[time];
+            if (lockedInstructorId) {
+              // Ensure the locked instructor is still in the system
+              const instructorExists = instructors.some(i => i.id === lockedInstructorId);
+              if (instructorExists) {
+                // Force this assignment to use the locked instructor
+                newSchedule[day][type][time] = lockedInstructorId;
+                // Mark this time slot as taken for this instructor
+                instructorTimeSlots[lockedInstructorId][day][time] = true;
+                instructorAssignments[lockedInstructorId]++;
+              }
+            } else {
+              // For non-locked assignments, preserve existing assignments that aren't TBD
+              const instructorId = newSchedule[day]?.[type]?.[time];
+              if (instructorId && instructorId !== 'TBD') {
+                // Mark this time slot as taken for this instructor
+                if (instructorTimeSlots[instructorId]) {
+                  instructorTimeSlots[instructorId][day][time] = true;
+                  instructorAssignments[instructorId]++;
+                }
               }
             }
-          }
-        });
+          });
+        }
       });
     });
     
@@ -527,15 +637,19 @@ export const ClassScheduleProvider = ({ children }) => {
       'PT': 5
     };
     
-    // Create a list of all TBD slots
+    // Create a list of all TBD slots - ONLY for valid class slots
     const tbdSlots = [];
     DAYS_OF_WEEK.forEach(day => {
       CLASS_TYPES.forEach(type => {
-        CLASS_TIMES.forEach(time => {
-          if (newSchedule[day]?.[type]?.[time] === 'TBD') {
-            tbdSlots.push({ day, type, time, priority: classPriority[type] || 99 });
-          }
-        });
+        // CRITICAL FIX: Only consider valid class slots from our source of truth
+        if (VALID_CLASS_SLOTS[day]?.[type]) {
+          // Use the valid slots from VALID_CLASS_SLOTS instead of all CLASS_TIMES
+          VALID_CLASS_SLOTS[day][type].forEach(time => {
+            if (newSchedule[day]?.[type]?.[time] === 'TBD') {
+              tbdSlots.push({ day, type, time, priority: classPriority[type] || 99 });
+            }
+          });
+        }
       });
     });
     
@@ -756,42 +870,80 @@ export const ClassScheduleProvider = ({ children }) => {
     return hours * 60 + minutes;
   }
 
-  // Add a new instructor
-  function addInstructor(instructor) {
+  // Add a new instructor - returns a promise that resolves with the instructor ID when complete
+  async function addInstructor(instructor) {
     try {
       // Save current state for history/undo
       const currentInstructors = [...instructors];
       saveToHistory('instructors', currentInstructors);
       
+      // Ensure instructor has a valid ID
+      if (!instructor.id || instructor.id.trim() === '') {
+        // Generate a fallback ID if none provided
+        instructor.id = instructor.name
+          .split(' ')
+          .map(n => n[0]?.toUpperCase() || '')
+          .join('');
+      }
+      
       // Validate instructor data before adding
       const validatedInstructor = validateInstructorData(instructor);
       
-      // Update instructors state
-      setInstructors(prev => [...prev, validatedInstructor]);
+      // Ensure all required fields are present
+      if (!validatedInstructor.classTypes) validatedInstructor.classTypes = [];
+      if (!validatedInstructor.availability) validatedInstructor.availability = [];
+      if (!validatedInstructor.classTypePreferences) validatedInstructor.classTypePreferences = {};
+      if (!validatedInstructor.blockSize) validatedInstructor.blockSize = 2;
+      if (!validatedInstructor.minClasses) validatedInstructor.minClasses = 2;
+      if (!validatedInstructor.maxClasses) validatedInstructor.maxClasses = 10;
       
-      // Immediately save to localStorage for backup
-      const updatedInstructors = [...instructors, validatedInstructor];
-      localStorage.setItem('instructors', JSON.stringify(updatedInstructors));
+      // First save to Supabase to ensure persistence
+      const { data, error } = await supabase.from('instructors').upsert(
+        validatedInstructor,
+        { onConflict: 'id', returning: 'minimal' }
+      );
       
-      // Manually trigger Supabase save to ensure it's saved immediately
-      // This is important for registration data to persist
-      (async () => {
-        try {
-          const { error } = await supabase.from('instructors').upsert(
-            validatedInstructor,
-            { onConflict: 'id' }
-          );
-          
-          if (error) {
-            console.error('Error saving new instructor to Supabase:', error);
-          }
-        } catch (err) {
-          console.error('Failed to save instructor to Supabase:', err);
+      if (error) {
+        console.error('Error saving instructor to Supabase:', error);
+        // Continue with local save even if Supabase fails
+      }
+      
+      // Update React state with the new instructor
+      setInstructors(prev => {
+        // Check if instructor already exists (by ID)
+        const exists = prev.some(i => i.id === validatedInstructor.id);
+        if (exists) {
+          // Update existing instructor
+          return prev.map(i => i.id === validatedInstructor.id ? validatedInstructor : i);
+        } else {
+          // Add new instructor
+          return [...prev, validatedInstructor];
         }
-      })();
+      });
+      
+      // Save to localStorage as backup
+      // Use a setTimeout to ensure this happens after state update
+      setTimeout(() => {
+        try {
+          localStorage.setItem('instructors', JSON.stringify([...instructors, validatedInstructor]));
+        } catch (e) {
+          console.error('Failed to save to localStorage:', e);
+        }
+      }, 0);
       
       // Clear any errors
       setError(null);
+      
+      // Verify the data was saved by fetching it back
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('instructors')
+        .select('*')
+        .eq('id', validatedInstructor.id)
+        .single();
+        
+      if (verifyError) {
+        console.error('Error verifying instructor save:', verifyError);
+      }
       
       return validatedInstructor.id; // Return the ID for reference
     } catch (err) {
@@ -1003,7 +1155,12 @@ export const ClassScheduleProvider = ({ children }) => {
         getTotalScheduledSlots,
         undoLastChange, // Add undo functionality
         hasSchedulingConflict, // Expose conflict detection
-        validateInstructorData // Expose validation function
+        validateInstructorData, // Expose validation function
+        convertTimeToMinutes, // Expose time conversion for sorting
+        DAYS_OF_WEEK, // Expose constants
+        CLASS_TYPES,
+        VALID_CLASS_SLOTS,
+        isValidClassSlot
       }}
     >
       {children}
