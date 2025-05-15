@@ -3,6 +3,19 @@ import { useClassSchedule } from '../context/ClassScheduleContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
+// Instructor color mapping for individual class views
+const INSTRUCTOR_COLORS = {
+  'DB': { bg: 'bg-gray-600', text: 'text-white' },      // Dayron - grey
+  'MH': { bg: 'bg-red-600', text: 'text-white' },        // Michelle - red
+  'AK': { bg: 'bg-yellow-600', text: 'text-white' },     // Allison - yellow
+  'AD': { bg: 'bg-blue-800', text: 'text-white' },       // Aseel - dark blue
+  'TS': { bg: 'bg-teal-500', text: 'text-white' },       // Taylor - turquoise
+  'MB': { bg: 'bg-orange-500', text: 'text-white' },     // Megan - Orange
+  'JD': { bg: 'bg-blue-400', text: 'text-white' },       // Jess - light blue
+  'EF': { bg: 'bg-green-700', text: 'text-white' },      // Erin - green
+  'SS': { bg: 'bg-purple-700', text: 'text-white' }      // Sandhya - purple
+};
+
 const Dashboard = () => {
   const { 
     schedule, 
@@ -803,23 +816,25 @@ const Dashboard = () => {
                         {DAYS_OF_WEEK.map((day) => {
                           const instructorId = schedule[day]?.[type]?.[time];
                           const hasClass = !!instructorId;
-                          
-                          // Get the appropriate background color based on instructor
-                          let bgClass = 'bg-dark-hover/30';
-                          let textClass = 'text-white/70';
-                          
-                          if (hasClass) {
-                            if (type === 'Lagree') {
-                              // For Lagree, use instructor-specific colors
-                              bgClass = instructorId === 'TBD' ? 'bg-dark-hover/50 border-dark-border/50' : 
-                                      'bg-lagree/10 border-lagree/30';
-                              textClass = instructorId === 'TBD' ? 'text-white/50' : 'text-white';
-                            } else {
-                              // For other class types, use class type colors
-                              bgClass = `bg-${type.toLowerCase()}/10 border-${type.toLowerCase()}/30`;
-                              textClass = 'text-white';
-                            }
-                          }
+                                                    // Get the appropriate background color based on instructor
+                           let bgClass = 'bg-dark-hover/30';
+                           let textClass = 'text-white/70';
+                           
+                           if (hasClass) {
+                             if (instructorId === 'TBD') {
+                               // For TBD, use a neutral color
+                               bgClass = 'bg-dark-hover/50 border-dark-border/50';
+                               textClass = 'text-white/50';
+                             } else if (INSTRUCTOR_COLORS[instructorId]) {
+                               // Use instructor-specific colors if available
+                               bgClass = INSTRUCTOR_COLORS[instructorId].bg;
+                               textClass = INSTRUCTOR_COLORS[instructorId].text;
+                             } else {
+                               // Fallback to class type colors
+                               bgClass = `bg-${type.toLowerCase()}/10 border-${type.toLowerCase()}/30`;
+                               textClass = 'text-white';
+                             }
+                           }
                           
                           return (
                             <td key={day} className="py-3 px-4 text-center">
