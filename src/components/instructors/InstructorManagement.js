@@ -27,8 +27,15 @@ const InstructorManagement = () => {
     schedule,
     undoLastChange,
     hasSchedulingConflict,
-    validateInstructorData
+    validateInstructorData,
+    VALID_CLASS_SLOTS,
+    isValidClassSlot
   } = useClassSchedule();
+  
+  // Force refresh data when component mounts
+  useEffect(() => {
+    // No need to call fetchData directly, it's already called in the context
+  }, []);
   
   // Toast notifications
   const toast = useToast();
@@ -70,59 +77,109 @@ const InstructorManagement = () => {
     if (instructorId) {
       const instructor = instructors.find(i => i.id === instructorId);
       if (instructor) {
-        // Initialize availability grid with all slots unavailable by default
-        const availabilityGrid = {};
-        // Initialize class type preferences grid
-        const classTypeGrid = {};
-        
-        DAYS_OF_WEEK.forEach(day => {
-          availabilityGrid[day] = {};
-          classTypeGrid[day] = {};
-          CLASS_TIMES.forEach(time => {
-            // Default to unavailable
-            availabilityGrid[day][time] = false;
-            // Default to first class type the instructor can teach
-            classTypeGrid[day][time] = instructor.classTypes[0] || '';
-          });
-        });
-        
-        // Mark slots as available based on instructor's availability
-        // Show ALL availability slots without filtering based on scheduled classes
-        if (instructor.availability && instructor.availability.length > 0) {
-          // If we have explicit availability data, use it
-          instructor.availability.forEach(slot => {
-            const [day, time] = slot.split('-');
-            if (availabilityGrid[day] && CLASS_TIMES.includes(time)) {
-              // Mark this slot as available
-              availabilityGrid[day][time] = true;
-              
-              // Set class type preference if available
-              if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
-                classTypeGrid[day][time] = instructor.classTypePreferences[slot];
-              }
-            }
-          });
-        } else if (instructor.unavailability && instructor.unavailability.slots) {
-          // Fallback to using unavailability data if no explicit availability
+        try {
+          // Initialize availability grid with all slots unavailable by default
+          const availabilityGrid = {};
+          // Initialize class type preferences grid
+          const classTypeGrid = {};
+          
           DAYS_OF_WEEK.forEach(day => {
+            availabilityGrid[day] = {};
+            classTypeGrid[day] = {};
             CLASS_TIMES.forEach(time => {
-              const slot = `${day}-${time}`;
-              const isUnavailable = instructor.unavailability.slots.includes(slot);
-              availabilityGrid[day][time] = !isUnavailable;
-              
-              // Set class type preference if available
-              if (!isUnavailable && instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
-                classTypeGrid[day][time] = instructor.classTypePreferences[slot];
-              }
+              // Default to unavailable
+              availabilityGrid[day][time] = false;
+              // Default to first class type the instructor can teach
+              classTypeGrid[day][time] = instructor.classTypes[0] || '';
             });
           });
+          
+          // First, find which time slots actually have scheduled classes
+          const scheduledClassTimes = {};
+          DAYS_OF_WEEK.forEach(day => {
+            scheduledClassTimes[day] = new Set();
+            CLASS_TYPES.forEach(type => {
+              CLASS_TIMES.forEach(time => {
+                if (schedule[day]?.[type]?.[time] !== undefined && 
+                    schedule[day][type][time] !== null) {
+                  scheduledClassTimes[day].add(time);
+                }
+              });
+            });
+          });
+          
+          // Process instructor's availability
+          if (instructor.availability && instructor.availability.length > 0) {
+            // First, mark all slots from the instructor's availability
+            instructor.availability.forEach(slot => {
+              const [day, time] = slot.split('-');
+              if (availabilityGrid[day] && CLASS_TIMES.includes(time)) {
+                // Check if this time slot is valid for any class type the instructor can teach
+                let isValidForInstructor = false;
+                for (const classType of instructor.classTypes) {
+                  if (VALID_CLASS_SLOTS[day]?.[classType]?.has(time)) {
+                    isValidForInstructor = true;
+                    break;
+                  }
+                }
+                
+                // Mark as available if this is in the instructor's availability
+                // AND this time slot is valid for any class type they can teach
+                if (isValidForInstructor) {
+                  availabilityGrid[day][time] = true;
+                  
+                  // Set class type preference if available
+                  if (instructor.classTypePreferences && 
+                      instructor.classTypePreferences[slot]) {
+                    const preferredType = instructor.classTypePreferences[slot];
+                    if (instructor.classTypes.includes(preferredType)) {
+                      classTypeGrid[day][time] = preferredType;
+                    }
+                  }
+                }
+              }
+            });
+          } else if (instructor.unavailability && instructor.unavailability.slots) {
+            // Fallback to using unavailability data if no explicit availability
+            DAYS_OF_WEEK.forEach(day => {
+              CLASS_TIMES.forEach(time => {
+                // Check if this time slot is valid for any class type the instructor can teach
+                let isValidForInstructor = false;
+                for (const classType of instructor.classTypes) {
+                  if (VALID_CLASS_SLOTS[day]?.[classType]?.has(time)) {
+                    isValidForInstructor = true;
+                    break;
+                  }
+                }
+                
+                // Only consider valid time slots for this instructor
+                if (isValidForInstructor) {
+                  const slot = `${day}-${time}`;
+                  const isUnavailable = instructor.unavailability.slots.includes(slot);
+                  availabilityGrid[day][time] = !isUnavailable;
+                  
+                  // Set class type preference if available
+                  if (!isUnavailable && instructor.classTypePreferences && 
+                      instructor.classTypePreferences[slot]) {
+                    const preferredType = instructor.classTypePreferences[slot];
+                    if (instructor.classTypes.includes(preferredType)) {
+                      classTypeGrid[day][time] = preferredType;
+                    }
+                  }
+                }
+              });
+            });
+          }
+          
+          setInstructorAvailability(availabilityGrid);
+          setInstructorClassTypes(classTypeGrid);
+          
+          // Show success message
+          toast.info(`Loaded availability for ${instructor.name}`);
+        } catch (error) {
+          console.error('Error loading instructor data:', error);
+          toast.error('Failed to load instructor data');
         }
-        
-        setInstructorAvailability(availabilityGrid);
-        setInstructorClassTypes(classTypeGrid);
-        
-        // Show success message
-        toast.info(`Loaded availability for ${instructor.name}`);
       }
     }
   }, [instructors, DAYS_OF_WEEK, CLASS_TIMES, toast]);
@@ -151,37 +208,70 @@ const InstructorManagement = () => {
   };
   
   // Save all availability changes at once
-  const saveAvailability = () => {
+  const saveAvailability = async () => {
     if (!selectedInstructor) return;
     
     try {
-      // Convert the availability grid to an array of available slots
-      const availabilitySlots = [];
-      // Track class type preferences for each available slot
-      const classTypePreferences = {};
-      
-      // Process the availability grid
-      Object.entries(instructorAvailability).forEach(([day, times]) => {
-        Object.entries(times).forEach(([time, isAvailable]) => {
-          if (isAvailable) {
-            const slotKey = `${day}-${time}`;
-            availabilitySlots.push(slotKey);
-            
-            // Store class type preference for this slot
-            const classType = instructorClassTypes[day]?.[time] || '';
-            if (classType) {
-              classTypePreferences[slotKey] = classType;
-            }
-          }
-        });
-      });
-      
       // Get the current instructor
       const instructor = instructors.find(i => i.id === selectedInstructor);
       if (!instructor) {
         toast.error('Instructor not found');
         return;
       }
+      
+      // Create a backup of the current instructor data
+      const backupKey = `instructor_backup_${instructor.id}`;
+      try {
+        localStorage.setItem(backupKey, JSON.stringify(instructor));
+      } catch (e) {
+        console.warn('Failed to create backup:', e);
+      }
+      
+      // Convert the availability grid to an array of available slots
+      const availabilitySlots = [];
+      // Track class type preferences for each available slot
+      const classTypePreferences = {};
+      
+      // First, preserve all existing availability slots that aren't in the current view
+      // This ensures we don't lose availability data for slots that aren't currently displayed
+      if (instructor.availability && Array.isArray(instructor.availability)) {
+        instructor.availability.forEach(slot => {
+          const [day, time] = slot.split('-');
+          
+          // If this slot isn't in our current view (not a scheduled class time),
+          // preserve it in the availability array
+          if (!instructorAvailability[day] || instructorAvailability[day][time] === undefined) {
+            availabilitySlots.push(slot);
+            
+            // Also preserve any class type preferences for this slot
+            if (instructor.classTypePreferences && instructor.classTypePreferences[slot]) {
+              classTypePreferences[slot] = instructor.classTypePreferences[slot];
+            }
+          }
+        });
+      }
+      
+      // Now process the availability grid for slots in the current view
+      Object.entries(instructorAvailability).forEach(([day, times]) => {
+        Object.entries(times).forEach(([time, isAvailable]) => {
+          if (isAvailable) {
+            const slotKey = `${day}-${time}`;
+            // Only add if not already added from preserved slots
+            if (!availabilitySlots.includes(slotKey)) {
+              availabilitySlots.push(slotKey);
+            }
+            
+            // Store class type preference for this slot
+            const classType = instructorClassTypes[day]?.[time] || '';
+            if (classType && instructor.classTypes.includes(classType)) {
+              classTypePreferences[slotKey] = classType;
+            } else if (instructor.classTypes.length > 0) {
+              // Default to first class type if none selected or invalid
+              classTypePreferences[slotKey] = instructor.classTypes[0];
+            }
+          }
+        });
+      });
       
       // Create updated instructor with new availability and class type preferences
       const updatedInstructor = {
@@ -191,16 +281,34 @@ const InstructorManagement = () => {
       };
       
       // Validate the data before saving
-      const validatedInstructor = validateInstructorData(updatedInstructor);
+      const validatedInstructor = validateInstructorData ? validateInstructorData(updatedInstructor) : updatedInstructor;
       
-      // Update the instructor
+      // First, try to save directly to Supabase for reliability
+      try {
+        const { supabase } = window;
+        if (supabase) {
+          const result = await supabase.from('instructors').upsert(
+            validatedInstructor,
+            { onConflict: 'id' }
+          );
+          
+          if (result.error) {
+            console.error('Error saving directly to Supabase:', result.error);
+            throw new Error('Failed to save to database');
+          }
+        }
+      } catch (e) {
+        console.warn('Direct Supabase save failed, falling back to context update:', e);
+      }
+      
+      // Also update through the context (which may also save to Supabase)
       const success = updateInstructor(selectedInstructor, validatedInstructor);
       
       if (success) {
         // Ensure class type selections are preserved in the UI
         setInstructorClassTypes({...instructorClassTypes});
         
-        // Show success message with toast instead of alert
+        // Show success message with toast
         toast.success(`Availability for ${instructor.name} has been saved successfully`);
       } else {
         toast.error('Failed to save instructor availability');
@@ -270,14 +378,59 @@ const InstructorManagement = () => {
   };
   
   // Save edited instructor
-  const saveInstructor = () => {
-    if (editingInstructor) {
-      const success = updateInstructor(editingInstructor.id, editingInstructor);
-      if (success) {
-        toast.success(`Instructor ${editingInstructor.name} updated successfully`);
-        closeEditModal();
-      } else {
-        toast.error('Failed to update instructor');
+  const saveInstructor = (updatedInstructor) => {
+    if (updatedInstructor) {
+      try {
+        console.log('Saving updated instructor:', updatedInstructor);
+        
+        // Create a backup in localStorage before saving
+        try {
+          const backupKey = `instructor_backup_${updatedInstructor.id}`;
+          localStorage.setItem(backupKey, JSON.stringify(updatedInstructor));
+        } catch (e) {
+          console.error('Failed to create backup:', e);
+        }
+        
+        // Validate the data before saving
+        const validatedInstructor = validateInstructorData(updatedInstructor);
+        
+        // Update through the context
+        const success = updateInstructor(updatedInstructor.id, validatedInstructor);
+        
+        if (success) {
+          // Also manually save to Supabase to ensure persistence
+          try {
+            const { supabase } = window;
+            if (supabase) {
+              supabase.from('instructors').upsert(
+                validatedInstructor,
+                { onConflict: 'id' }
+              ).then(result => {
+                if (result.error) {
+                  console.error('Error saving to Supabase:', result.error);
+                } else {
+                  console.log('Successfully saved to Supabase');
+                }
+              });
+            }
+          } catch (e) {
+            console.error('Error with manual Supabase save:', e);
+          }
+          
+          toast.success(`Instructor ${updatedInstructor.name} updated successfully`);
+          closeEditModal();
+          
+          // Force refresh the selected instructor's data
+          if (selectedInstructor === updatedInstructor.id) {
+            // Re-select the instructor to refresh all data
+            handleInstructorSelect(selectedInstructor);
+          }
+        } else {
+          toast.error('Failed to update instructor');
+        }
+      } catch (error) {
+        console.error('Error saving instructor:', error);
+        toast.error(`Error saving instructor: ${error.message || 'Unknown error'}`);
       }
     }
   };
@@ -323,7 +476,7 @@ const InstructorManagement = () => {
 
   return (
     <div className="max-w-7xl mx-auto bg-white p-4 md:p-6 rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-4 md:mb-6 text-center text-blue-800">Instructor Management</h2>
+      <h2 className="text-2xl font-bold mb-4 md:mb-6 text-center text-black">Instructor Management</h2>
       
       {/* Mobile view controls */}
       {isMobile && (
@@ -364,7 +517,7 @@ const InstructorManagement = () => {
       {/* Instructor list for non-mobile */}
       {!isMobile && (
         <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4">All Instructors</h3>
+          <h3 className="text-lg font-semibold mb-4 text-black">All Instructors</h3>
           
           <InstructorList
             instructors={instructors}
@@ -381,7 +534,7 @@ const InstructorManagement = () => {
         {/* Desktop Instructor Selection */}
         {!isMobile && (
           <div className="md:col-span-1 bg-gray-50 p-4 rounded-md">
-            <h3 className="text-lg font-semibold mb-4 text-blue-700">Instructors</h3>
+            <h3 className="text-lg font-semibold mb-4 text-black">Instructors</h3>
             
             <InstructorSelector
               instructors={instructors}
@@ -412,7 +565,7 @@ const InstructorManagement = () => {
           {selectedInstructor ? (
             <div>
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-blue-700">
+                <h3 className="text-lg font-semibold text-black">
                   Availability for {instructors.find(i => i.id === selectedInstructor)?.name}
                 </h3>
                 
@@ -438,8 +591,8 @@ const InstructorManagement = () => {
               />
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <p>Select an instructor to manage their availability</p>
+            <div className="text-center py-8">
+              <p className="text-black font-medium">Select an instructor to manage their availability</p>
             </div>
           )}
         </div>
@@ -450,6 +603,7 @@ const InstructorManagement = () => {
         isOpen={showEditModal}
         instructor={editingInstructor}
         classTypes={CLASS_TYPES}
+        daysOfWeek={DAYS_OF_WEEK}
         onChange={handleEditInstructorChange}
         onSave={saveInstructor}
         onClose={closeEditModal}

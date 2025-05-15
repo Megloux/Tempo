@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 /* Theme-specific styling */
-.text-black * {
+.text-black *:not(input[type="checkbox"]):not(input[type="radio"]) {
   color: inherit;
 }
 
