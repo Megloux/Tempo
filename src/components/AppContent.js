@@ -35,7 +35,11 @@ const AppContent = ({ activeTab, setActiveTab }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-dark">
+    <div className={`min-h-screen ${
+      activeTab === 'dashboard' 
+        ? 'bg-gradient-dark text-white' 
+        : 'bg-white text-black'
+    }`}>
       <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         <Routes>
           <Route path="/" element={<Dashboard />} />

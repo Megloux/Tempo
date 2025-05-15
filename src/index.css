@@ -4,6 +4,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme-specific styling */
+.text-black * {
+  color: inherit;
+}
+
+.bg-white.text-black input,
+.bg-white.text-black select,
+.bg-white.text-black textarea,
+.bg-white.text-black button:not(.bg-indigo-600):not(.bg-red-600) {
+  color: black;
+  border-color: #d1d5db;
+}
+
 @layer base {
   body {
     @apply bg-dark text-white m-0 font-sans;
