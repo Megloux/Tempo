@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import AppContent from './components/AppContent';
 import { ClassScheduleProvider } from './context/ClassScheduleContext';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -9,6 +11,7 @@ function App() {
   return (
     <ClassScheduleProvider>
       <div className="min-h-screen bg-gray-50">
+        <ToastContainer position="top-center" autoClose={5000} />
         <header className="bg-white shadow">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
