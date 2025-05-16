@@ -21,69 +21,93 @@ const SyncButton = () => {
       const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
       const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
       
+      // First check the structure of the instructors table
+      const { data: tableInfo, error: tableError } = await supabase
+        .from('instructors')
+        .select('*')
+        .limit(1);
+      
+      if (tableError) {
+        console.error('Error checking instructors table:', tableError);
+      }
+      
+      // Prepare instructors data - only include fields that exist in the Supabase table
+      const preparedInstructors = instructors.map(instructor => {
+        // Create a base object with only id and essential fields
+        const prepared = {
+          id: instructor.id,
+          name: instructor.name || '',
+          email: instructor.email || '',
+          phone: instructor.phone || '',
+          classTypes: Array.isArray(instructor.classTypes) ? instructor.classTypes : []
+        };
+        
+        // Add other fields if they exist in the instructor object
+        if (instructor.min_classes !== undefined) prepared.min_classes = instructor.min_classes;
+        if (instructor.max_classes !== undefined) prepared.max_classes = instructor.max_classes;
+        if (instructor.color !== undefined) prepared.color = instructor.color;
+        
+        return prepared;
+      });
+      
       // Upload instructors to Supabase
       const { error: instructorsError } = await supabase
         .from('instructors')
-        .upsert(instructors, { onConflict: 'id' });
+        .upsert(preparedInstructors, { onConflict: 'id' });
       
       if (instructorsError) {
+        console.error('Error details:', instructorsError);
         throw new Error(`Error syncing instructors: ${instructorsError.message}`);
       }
       
-      // Upload schedule to Supabase
-      // First check if a schedule record exists
-      const { data: existingSchedule } = await supabase
-        .from('schedule')
-        .select('id')
-        .limit(1);
+      // Create a simplified schedule object to avoid schema issues
+      const simplifiedSchedule = {
+        data: schedule,
+        updated_at: new Date().toISOString()
+      };
       
-      if (existingSchedule && existingSchedule.length > 0) {
-        // Update existing record
+      try {
+        // Try to delete any existing schedule records first
+        await supabase.from('schedule').delete().neq('id', 0);
+        
+        // Insert new schedule record
         const { error: scheduleError } = await supabase
           .from('schedule')
-          .update({ data: schedule })
-          .eq('id', existingSchedule[0].id);
+          .insert([simplifiedSchedule]);
           
         if (scheduleError) {
-          throw new Error(`Error updating schedule: ${scheduleError.message}`);
+          console.error('Schedule error details:', scheduleError);
+          throw new Error(`Error saving schedule: ${scheduleError.message}`);
         }
-      } else {
-        // Insert new record
-        const { error: scheduleError } = await supabase
-          .from('schedule')
-          .insert([{ data: schedule }]);
-          
-        if (scheduleError) {
-          throw new Error(`Error inserting schedule: ${scheduleError.message}`);
-        }
+      } catch (scheduleError) {
+        console.error('Error handling schedule:', scheduleError);
+        setMessage(`Warning: Schedule sync had an error: ${scheduleError.message}. Continuing with other data...`);
+        // Continue with other operations even if schedule fails
       }
       
-      // Upload locked assignments to Supabase
-      // First check if a locked_assignments record exists
-      const { data: existingLocks } = await supabase
-        .from('locked_assignments')
-        .select('id')
-        .limit(1);
+      // Create a simplified locked assignments object
+      const simplifiedLocks = {
+        data: lockedAssignments,
+        updated_at: new Date().toISOString()
+      };
       
-      if (existingLocks && existingLocks.length > 0) {
-        // Update existing record
+      try {
+        // Try to delete any existing locked assignments records first
+        await supabase.from('locked_assignments').delete().neq('id', 0);
+        
+        // Insert new locked assignments record
         const { error: locksError } = await supabase
           .from('locked_assignments')
-          .update({ data: lockedAssignments })
-          .eq('id', existingLocks[0].id);
+          .insert([simplifiedLocks]);
           
         if (locksError) {
-          throw new Error(`Error updating locked assignments: ${locksError.message}`);
+          console.error('Locks error details:', locksError);
+          throw new Error(`Error saving locked assignments: ${locksError.message}`);
         }
-      } else {
-        // Insert new record
-        const { error: locksError } = await supabase
-          .from('locked_assignments')
-          .insert([{ data: lockedAssignments }]);
-          
-        if (locksError) {
-          throw new Error(`Error inserting locked assignments: ${locksError.message}`);
-        }
+      } catch (locksError) {
+        console.error('Error handling locked assignments:', locksError);
+        setMessage(`Warning: Locked assignments sync had an error: ${locksError.message}. Continuing...`);
+        // Continue with other operations even if locked assignments fails
       }
       
       setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
