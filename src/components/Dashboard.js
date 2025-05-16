@@ -3,6 +3,7 @@ import { useClassSchedule, ClassScheduleContext } from '../context/ClassSchedule
 import InstructorManagement from './instructors/InstructorManagement';
 import ExportToExcel from './ExportToExcel';
 import SupabaseDebug from './SupabaseDebug';
+import SyncButton from './SyncButton';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -1074,9 +1075,11 @@ const Dashboard = () => {
             )}
           </div>
           
-          {/* Supabase Debug Panel */}
+          {/* Data Sharing Tools */}
           <div className="mt-8 mb-4">
-            <details className="bg-gray-800 rounded-lg">
+            <SyncButton />
+            
+            <details className="bg-gray-800 rounded-lg mt-4">
               <summary className="p-4 text-white font-bold cursor-pointer">
                 Data Sharing Diagnostics
               </summary>

@@ -1,0 +1,114 @@
+import React, { useState } from 'react';
+import { supabase } from '../supabaseClient';
+
+const SyncButton = () => {
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState('');
+  
+  const syncToSupabase = async () => {
+    try {
+      setSyncing(true);
+      setMessage('Syncing data to Supabase...');
+      
+      // Get data from localStorage
+      const instructors = JSON.parse(localStorage.getItem('instructors') || '[]');
+      const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
+      const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
+      
+      // Upload instructors to Supabase
+      const { error: instructorsError } = await supabase
+        .from('instructors')
+        .upsert(instructors, { onConflict: 'id' });
+      
+      if (instructorsError) {
+        throw new Error(`Error syncing instructors: ${instructorsError.message}`);
+      }
+      
+      // Upload schedule to Supabase
+      // First check if a schedule record exists
+      const { data: existingSchedule } = await supabase
+        .from('schedule')
+        .select('id')
+        .limit(1);
+      
+      if (existingSchedule && existingSchedule.length > 0) {
+        // Update existing record
+        const { error: scheduleError } = await supabase
+          .from('schedule')
+          .update({ data: schedule })
+          .eq('id', existingSchedule[0].id);
+          
+        if (scheduleError) {
+          throw new Error(`Error updating schedule: ${scheduleError.message}`);
+        }
+      } else {
+        // Insert new record
+        const { error: scheduleError } = await supabase
+          .from('schedule')
+          .insert([{ data: schedule }]);
+          
+        if (scheduleError) {
+          throw new Error(`Error inserting schedule: ${scheduleError.message}`);
+        }
+      }
+      
+      // Upload locked assignments to Supabase
+      // First check if a locked_assignments record exists
+      const { data: existingLocks } = await supabase
+        .from('locked_assignments')
+        .select('id')
+        .limit(1);
+      
+      if (existingLocks && existingLocks.length > 0) {
+        // Update existing record
+        const { error: locksError } = await supabase
+          .from('locked_assignments')
+          .update({ data: lockedAssignments })
+          .eq('id', existingLocks[0].id);
+          
+        if (locksError) {
+          throw new Error(`Error updating locked assignments: ${locksError.message}`);
+        }
+      } else {
+        // Insert new record
+        const { error: locksError } = await supabase
+          .from('locked_assignments')
+          .insert([{ data: lockedAssignments }]);
+          
+        if (locksError) {
+          throw new Error(`Error inserting locked assignments: ${locksError.message}`);
+        }
+      }
+      
+      setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
+    } catch (error) {
+      console.error('Sync error:', error);
+      setMessage(`Error syncing data: ${error.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+  
+  return (
+    <div className="mt-4 p-4 bg-blue-900 rounded-lg">
+      <h3 className="text-white text-lg font-bold mb-2">Data Sharing</h3>
+      <p className="text-white/80 mb-4">
+        Push your current schedule data to the shared database so others can see it.
+      </p>
+      <button
+        onClick={syncToSupabase}
+        disabled={syncing}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+      >
+        {syncing ? 'Syncing...' : 'Sync My Data to Supabase'}
+      </button>
+      {message && (
+        <div className="mt-2 p-2 rounded bg-blue-800/50 text-white">
+          {message}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SyncButton;
