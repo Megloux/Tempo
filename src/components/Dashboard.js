@@ -4,6 +4,7 @@ import InstructorManagement from './instructors/InstructorManagement';
 import ExportToExcel from './ExportToExcel';
 import SupabaseDebug from './SupabaseDebug';
 import SyncButton from './SyncButton';
+import { toast } from 'react-toastify';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -60,6 +61,72 @@ const Dashboard = () => {
     }
   }, [addPredefinedClasses, getTotalScheduledSlots]);
   
+  // Load shared data from Supabase on initial load
+  useEffect(() => {
+    const loadSharedData = async () => {
+      try {
+        console.log('Checking Supabase for shared data...');
+        // Check if Supabase has data
+        const { data, error } = await supabase
+          .from('tempo_app_data')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(1);
+        
+        if (error) {
+          console.error('Error checking Supabase for shared data:', error);
+          return;
+        }
+        
+        if (data && data.length > 0 && data[0].data) {
+          console.log('Found shared data in Supabase, loading it...');
+          const appData = data[0].data;
+          
+          // Only update if the Supabase data is newer than our local data
+          const lastSyncTimestamp = localStorage.getItem('last_sync_timestamp');
+          const dataTimestamp = appData.timestamp;
+          
+          if (!lastSyncTimestamp || (dataTimestamp && new Date(dataTimestamp) > new Date(lastSyncTimestamp))) {
+            console.log('Supabase data is newer than local data, updating...');
+            
+            // Update localStorage with the shared data
+            if (appData.instructors) localStorage.setItem('instructors', JSON.stringify(appData.instructors));
+            if (appData.schedule) localStorage.setItem('schedule', JSON.stringify(appData.schedule));
+            if (appData.lockedAssignments) localStorage.setItem('lockedAssignments', JSON.stringify(appData.lockedAssignments));
+            
+            // Update the last sync timestamp
+            localStorage.setItem('last_sync_timestamp', dataTimestamp || new Date().toISOString());
+            
+            // Store a flag to show a notification after reload
+            localStorage.setItem('show_data_loaded_notification', 'true');
+            
+            // Force reload the page to apply the changes
+            window.location.reload();
+          } else {
+            console.log('Local data is up-to-date or newer than Supabase data');
+          }
+        } else {
+          console.log('No shared data found in Supabase');
+        }
+      } catch (err) {
+        console.error('Error auto-loading shared data:', err);
+      }
+    };
+
+    // Check for URL parameter to force data reload
+    const urlParams = new URLSearchParams(window.location.search);
+    const forceReload = urlParams.get('reload_data');
+    
+    // Only auto-load if we haven't loaded data recently or if force reload is requested
+    const lastDataLoad = localStorage.getItem('data_load_timestamp');
+    const oneHourAgo = Date.now() - 3600000;
+    
+    if (forceReload === 'true' || !lastDataLoad || (parseInt(lastDataLoad) < oneHourAgo)) {
+      loadSharedData();
+      localStorage.setItem('data_load_timestamp', Date.now().toString());
+    }
+  }, []);
+  
   // Force re-render when schedule changes
   const [refreshKey, setRefreshKey] = useState(0);
   
@@ -67,6 +134,27 @@ const Dashboard = () => {
   useEffect(() => {
     setRefreshKey(prevKey => prevKey + 1);
   }, [schedule]);
+  
+  // Check for and display notification after data load
+  useEffect(() => {
+    const showNotification = localStorage.getItem('show_data_loaded_notification');
+    if (showNotification === 'true') {
+      // Clear the flag
+      localStorage.removeItem('show_data_loaded_notification');
+      
+      // Show toast notification
+      toast.info('✅ Schedule data has been updated with the latest shared version', {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
+      });
+      
+      console.log('Displayed notification about data update');
+    }
+  }, []);
   
   const exportToExcel = () => {
     // Create instructor color mapping for consistent colors
