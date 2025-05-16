@@ -249,7 +249,8 @@ const Dashboard = () => {
   
   const addNewClass = () => {
     const { day, type, time } = newClass;
-    addClass(day, type, time);
+    console.log(`Adding new class: ${day} ${time} ${type} with force override`);
+    addClass(day, type, time, 'TBD', true); // Always use force override for manual class additions
   };
   
   // State for manual assignment modal

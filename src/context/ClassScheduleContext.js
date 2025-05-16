@@ -380,12 +380,17 @@ export const ClassScheduleProvider = ({ children }) => {
   }
 
   // Add class to the schedule
-  function addClass(day, type, time, instructorId = 'TBD') {
-    // First check if this is a valid class slot
-    // We only want to allow adding classes at valid time slots
-    if (!isValidClassSlot(day, type, time)) {
-      console.warn(`Cannot add class at invalid time slot: ${day} ${time} ${type}`);
-      return false;
+  function addClass(day, type, time, instructorId = 'TBD', forceOverride = false) {
+    // Skip validation if force override is enabled
+    if (!forceOverride) {
+      // First check if this is a valid class slot
+      // We only want to allow adding classes at valid time slots
+      if (!isValidClassSlot(day, type, time)) {
+        console.warn(`Cannot add class at invalid time slot: ${day} ${time} ${type}`);
+        return false;
+      }
+    } else {
+      console.log(`Force override enabled: Adding class at ${day} ${time} ${type} regardless of validation`);
     }
     
     setSchedule(prevSchedule => {
