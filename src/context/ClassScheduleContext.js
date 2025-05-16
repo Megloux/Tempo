@@ -417,31 +417,47 @@ export const ClassScheduleProvider = ({ children }) => {
   
   // Manually assign an instructor to a class
   function manuallyAssignInstructor(day, type, time, instructorId, forceOverride = false) {
-    // Check if the instructor exists
+    // FORCE OVERRIDE - Skip ALL validation if force override is true
+    if (forceOverride) {
+      // Update the schedule directly with no checks
+      setSchedule(prevSchedule => {
+        const newSchedule = deepClone(prevSchedule);
+        if (!newSchedule[day]) newSchedule[day] = {};
+        if (!newSchedule[day][type]) newSchedule[day][type] = {};
+        newSchedule[day][type][time] = instructorId;
+        return newSchedule;
+      });
+      
+      // Lock the assignment
+      if (instructorId !== 'TBD') {
+        lockAssignment(day, type, time);
+      }
+      return true;
+    }
+    
+    // Normal validation logic only runs if not forcing override
     const instructor = instructors.find(i => i.id === instructorId);
     if (!instructor && instructorId !== 'TBD') return false;
     
-    if (!forceOverride) {
-      // Check if the instructor can teach this class type
-      if (instructorId !== 'TBD' && !instructor.classTypes.includes(type)) {
+    // Check if the instructor can teach this class type
+    if (instructorId !== 'TBD' && !instructor.classTypes.includes(type)) {
+      return false;
+    }
+    
+    // Check for scheduling conflicts
+    if (instructorId !== 'TBD') {
+      const hasConflict = hasSchedulingConflict(schedule, instructorId, day, time, CLASS_TYPES);
+      if (hasConflict) {
+        console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
         return false;
       }
       
-      // Check for scheduling conflicts
-      if (instructorId !== 'TBD') {
-        const hasConflict = hasSchedulingConflict(schedule, instructorId, day, time, CLASS_TYPES);
-        if (hasConflict) {
-          console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
+      // Check if instructor is available at this time
+      if (instructor.availability && instructor.availability.length > 0) {
+        const isAvailable = instructor.availability.includes(`${day}-${time}`);
+        if (!isAvailable) {
+          console.warn(`Instructor ${instructorId} is not available on ${day} at ${time}`);
           return false;
-        }
-        
-        // Check if instructor is available at this time
-        if (instructor.availability && instructor.availability.length > 0) {
-          const isAvailable = instructor.availability.includes(`${day}-${time}`);
-          if (!isAvailable) {
-            console.warn(`Instructor ${instructorId} is not available on ${day} at ${time}`);
-            return false;
-          }
         }
       }
     }

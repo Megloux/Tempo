@@ -3,17 +3,19 @@ import { useClassSchedule } from '../context/ClassScheduleContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
-// Instructor color mapping for individual class views
+// Instructor colors for individual class schedule views
 const INSTRUCTOR_COLORS = {
-  'DB': { bg: 'bg-gray-600', text: 'text-white' },      // Dayron - grey
-  'MH': { bg: 'bg-red-600', text: 'text-white' },        // Michelle - red
-  'AK': { bg: 'bg-yellow-600', text: 'text-white' },     // Allison - yellow
-  'AD': { bg: 'bg-blue-800', text: 'text-white' },       // Aseel - dark blue
-  'TS': { bg: 'bg-teal-500', text: 'text-white' },       // Taylor - turquoise
-  'MB': { bg: 'bg-orange-500', text: 'text-white' },     // Megan - Orange
-  'JD': { bg: 'bg-blue-400', text: 'text-white' },       // Jess - light blue
-  'EF': { bg: 'bg-green-700', text: 'text-white' },      // Erin - green
-  'SS': { bg: 'bg-purple-700', text: 'text-white' }      // Sandhya - purple
+  'DB': { bg: 'bg-red-600/10', text: 'text-red-600' },         // Dayron - Red
+  'MH': { bg: 'bg-blue-600/10', text: 'text-blue-600' },        // Michelle - Blue
+  'AK': { bg: 'bg-green-600/10', text: 'text-green-600' },       // Allison - Green
+  'AD': { bg: 'bg-yellow-500/10', text: 'text-yellow-500' },      // Aseel - Yellow
+  'TS': { bg: 'bg-fuchsia-600/10', text: 'text-fuchsia-600' },     // Taylor - Magenta
+  'MB': { bg: 'bg-teal-500/10', text: 'text-teal-500' },        // Megan - Teal
+  'JD': { bg: 'bg-sky-500/10', text: 'text-sky-500' },         // Jess - Sky Blue
+  'EF': { bg: 'bg-purple-600/10', text: 'text-purple-600' },      // Erin - Purple
+  'SS': { bg: 'bg-pink-500/10', text: 'text-pink-500' },        // Sandhya - Pink
+  'TBD': { bg: 'bg-gray-500/10', text: 'text-gray-500' },       // TBD - Grey
+  'AWD3': { bg: 'bg-white/10', text: 'text-white' }          // Alternate - White
 };
 
 const Dashboard = () => {
@@ -825,9 +827,13 @@ const Dashboard = () => {
                            
                            if (hasClass) {
                              if (instructorId === 'TBD') {
-                               // For TBD, use a neutral color
-                               bgClass = 'bg-dark-hover/50 border-dark-border/50';
-                               textClass = 'text-white/50';
+                               // For TBD, use grey
+                               bgClass = INSTRUCTOR_COLORS['TBD'].bg;
+                               textClass = INSTRUCTOR_COLORS['TBD'].text;
+                             } else if (instructorId.startsWith('AWD')) {
+                               // For Alternate Weekend DM, use white
+                               bgClass = INSTRUCTOR_COLORS['AWD3'].bg;
+                               textClass = INSTRUCTOR_COLORS['AWD3'].text;
                              } else if (INSTRUCTOR_COLORS[instructorId]) {
                                // Use instructor-specific colors if available
                                bgClass = INSTRUCTOR_COLORS[instructorId].bg;
