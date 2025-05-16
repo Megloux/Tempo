@@ -380,17 +380,12 @@ export const ClassScheduleProvider = ({ children }) => {
   }
 
   // Add class to the schedule
-  function addClass(day, type, time, instructorId = 'TBD', forceOverride = false) {
-    // Skip validation if force override is enabled
-    if (!forceOverride) {
-      // First check if this is a valid class slot
-      // We only want to allow adding classes at valid time slots
-      if (!isValidClassSlot(day, type, time)) {
-        console.warn(`Cannot add class at invalid time slot: ${day} ${time} ${type}`);
-        return false;
-      }
-    } else {
-      console.log(`Force override enabled: Adding class at ${day} ${time} ${type} regardless of validation`);
+  function addClass(day, type, time, instructorId = 'TBD') {
+    // First check if this is a valid class slot
+    // We only want to allow adding classes at valid time slots
+    if (!isValidClassSlot(day, type, time)) {
+      console.warn(`Cannot add class at invalid time slot: ${day} ${time} ${type}`);
+      return false;
     }
     
     setSchedule(prevSchedule => {
@@ -421,26 +416,8 @@ export const ClassScheduleProvider = ({ children }) => {
   }
   
   // Manually assign an instructor to a class
-  function manuallyAssignInstructor(day, type, time, instructorId, forceOverride = false) {
-    // FORCE OVERRIDE - Skip ALL validation if force override is true
-    if (forceOverride) {
-      // Update the schedule directly with no checks
-      setSchedule(prevSchedule => {
-        const newSchedule = deepClone(prevSchedule);
-        if (!newSchedule[day]) newSchedule[day] = {};
-        if (!newSchedule[day][type]) newSchedule[day][type] = {};
-        newSchedule[day][type][time] = instructorId;
-        return newSchedule;
-      });
-      
-      // Lock the assignment
-      if (instructorId !== 'TBD') {
-        lockAssignment(day, type, time);
-      }
-      return true;
-    }
-    
-    // Normal validation logic only runs if not forcing override
+  function manuallyAssignInstructor(day, type, time, instructorId) {
+    // Check if the instructor exists
     const instructor = instructors.find(i => i.id === instructorId);
     if (!instructor && instructorId !== 'TBD') return false;
     
@@ -1207,113 +1184,6 @@ export const ClassScheduleProvider = ({ children }) => {
     }
   }, [instructors, schedule, lockedAssignments]);
 
-  // Load data from external source (Supabase)
-  const updateScheduleFromExternalData = async (externalData) => {
-    try {
-      console.log('Updating app data from external source', externalData);
-      
-      // Validate the external data
-      if (!externalData || typeof externalData !== 'object') {
-        throw new Error('Invalid external data: not an object');
-      }
-      
-      // 1. Update instructors if present
-      if (externalData.instructors && Array.isArray(externalData.instructors)) {
-        console.log('Updating instructors:', externalData.instructors.length);
-        
-        // Add validation for each instructor
-        const validatedInstructors = externalData.instructors.map(instructor => {
-          // Ensure instructor has an ID
-          if (!instructor.id) {
-            console.warn('Instructor missing ID, generating one', instructor);
-            instructor.id = instructor.name 
-              ? instructor.name.split(' ').map(n => n[0] || '').join('')
-              : 'INS' + Math.floor(Math.random() * 1000);
-          }
-          
-          // Ensure instructor has required fields
-          return {
-            id: instructor.id,
-            name: instructor.name || 'Unknown',
-            classTypes: Array.isArray(instructor.classTypes) ? instructor.classTypes : [],
-            blockSize: instructor.blockSize || 2,
-            minClasses: instructor.minClasses || 1,
-            maxClasses: instructor.maxClasses || 10,
-            availability: instructor.availability || [],
-            classTypePreferences: instructor.classTypePreferences || {},
-            email: instructor.email || '',
-            phone: instructor.phone || '',
-            notes: instructor.notes || '',
-            ...instructor // Keep any other properties
-          };
-        });
-        
-        // Update the instructors state
-        setInstructors(validatedInstructors);
-        
-        // Also save to localStorage
-        localStorage.setItem('instructors', JSON.stringify(validatedInstructors));
-      } else {
-        console.warn('No valid instructors data in external source');
-      }
-      
-      // 2. Update schedule if present
-      if (externalData.schedule && typeof externalData.schedule === 'object') {
-        console.log('Updating schedule');
-        
-        // Create an empty schedule structure to start with
-        const newSchedule = initializeEmptySchedule();
-        
-        // Copy valid data from external schedule
-        DAYS_OF_WEEK.forEach(day => {
-          if (externalData.schedule[day] && typeof externalData.schedule[day] === 'object') {
-            CLASS_TYPES.forEach(type => {
-              if (externalData.schedule[day][type] && typeof externalData.schedule[day][type] === 'object') {
-                CLASS_TIMES.forEach(time => {
-                  // Only copy defined values (including null)
-                  if (externalData.schedule[day][type][time] !== undefined) {
-                    newSchedule[day][type][time] = externalData.schedule[day][type][time];
-                  }
-                });
-              }
-            });
-          }
-        });
-        
-        // Update the schedule state
-        setSchedule(newSchedule);
-        
-        // Also save to localStorage
-        localStorage.setItem('schedule', JSON.stringify(newSchedule));
-      } else {
-        console.warn('No valid schedule data in external source');
-      }
-      
-      // 3. Update locked assignments if present
-      if (externalData.lockedAssignments && typeof externalData.lockedAssignments === 'object') {
-        console.log('Updating locked assignments');
-        
-        // Update the locked assignments state
-        setLockedAssignments(externalData.lockedAssignments);
-        
-        // Also save to localStorage
-        localStorage.setItem('lockedAssignments', JSON.stringify(externalData.lockedAssignments));
-      } else {
-        console.warn('No valid locked assignments data in external source');
-      }
-      
-      // Clear any errors
-      setError(null);
-      
-      // Return success
-      return true;
-    } catch (error) {
-      console.error('Error updating from external data:', error);
-      setError(`Failed to update from external data: ${error.message}`);
-      return false;
-    }
-  };
-
   return (
     <ClassScheduleContext.Provider
       value={{
@@ -1347,8 +1217,7 @@ export const ClassScheduleProvider = ({ children }) => {
         DAYS_OF_WEEK, // Expose constants
         CLASS_TYPES,
         VALID_CLASS_SLOTS,
-        isValidClassSlot,
-        updateScheduleFromExternalData // Add function to load data from external sources
+        isValidClassSlot
       }}
     >
       {children}

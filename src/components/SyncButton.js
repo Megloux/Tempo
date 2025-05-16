@@ -10,65 +10,99 @@ const SyncButton = () => {
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [password, setPassword] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [error, setError] = useState(null);
   
   const syncToSupabase = async () => {
     try {
       setSyncing(true);
       setMessage('Syncing data to Supabase...');
+      setError(null);
+      
+      // Back up current data to localStorage first (safety measure)
+      try {
+        const instructors = JSON.parse(localStorage.getItem('instructors') || '[]');
+        const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
+        const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
+        
+        localStorage.setItem('tempo_backup_instructors', JSON.stringify(instructors));
+        localStorage.setItem('tempo_backup_schedule', JSON.stringify(schedule));
+        localStorage.setItem('tempo_backup_locks', JSON.stringify(lockedAssignments));
+        localStorage.setItem('tempo_backup_timestamp', new Date().toISOString());
+        
+        console.log('Created backup in localStorage before syncing');
+      } catch (backupError) {
+        console.warn('Failed to create backup:', backupError);
+        // Continue anyway, this is just a precaution
+      }
       
       // Get data from localStorage
       const instructors = JSON.parse(localStorage.getItem('instructors') || '[]');
       const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
       const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
       
-      // Let's try a different approach - create a special table just for this app's data
-      // First check if our special table exists
-      const { data: tableInfo, error: tableError } = await supabase
+      // Package the data
+      const appData = {
+        instructors,
+        schedule,
+        lockedAssignments,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('Attempting to sync data to Supabase...');
+      
+      // First check if our table exists
+      const { data: checkData, error: checkError } = await supabase
         .from('tempo_app_data')
         .select('id')
         .limit(1);
       
-      if (tableError) {
-        // Table doesn't exist yet, let's create it
-        console.log('Table does not exist yet, creating it...');
-        
-        // We can't create tables directly from JavaScript, so let's store the data in localStorage
-        // and provide instructions to the user
-        localStorage.setItem('tempo_backup_data', JSON.stringify({
-          instructors,
-          schedule,
-          lockedAssignments,
-          timestamp: new Date().toISOString()
-        }));
-        
-        setMessage('First-time setup: Please create the tempo_app_data table in Supabase. ' +
-                   'Your data has been backed up to localStorage.');
-        return;
+      if (checkError) {
+        console.error('Error checking for table:', checkError);
+        // If the error is that the table doesn't exist
+        if (checkError.code === '42P01' || checkError.message.includes('does not exist')) {
+          setError(`The tempo_app_data table doesn't exist in Supabase. Please create it with columns 'id' (primary key) and 'data' (jsonb type).`);
+          
+          // Store backup in localStorage for recovery
+          localStorage.setItem('tempo_full_backup', JSON.stringify(appData));
+          setMessage('Backup created in localStorage. Please set up the table in Supabase.');
+          return;
+        }
+        throw checkError;
       }
       
-      // Table exists, let's save the data
-      const { error: insertError } = await supabase
-        .from('tempo_app_data')
-        .insert([
-          {
-            data: JSON.stringify({
-              instructors,
-              schedule,
-              lockedAssignments,
-              timestamp: new Date().toISOString()
-            })
-          }
-        ]);
-      
-      if (insertError) {
-        console.error('Error inserting data:', insertError);
-        throw new Error(`Could not save data: ${insertError.message}`);
+      // Check if we have data already
+      if (checkData && checkData.length > 0) {
+        // Update existing record
+        console.log('Updating existing record with ID:', checkData[0].id);
+        const { error: updateError } = await supabase
+          .from('tempo_app_data')
+          .update({
+            data: appData // IMPORTANT: Do NOT stringify - Supabase expects a JavaScript object for JSONB columns
+          })
+          .eq('id', checkData[0].id);
+        
+        if (updateError) throw updateError;
+      } else {
+        // Insert new record
+        console.log('Creating new record');
+        const { error: insertError } = await supabase
+          .from('tempo_app_data')
+          .insert([
+            {
+              data: appData // IMPORTANT: Do NOT stringify - Supabase expects a JavaScript object for JSONB columns
+            }
+          ]);
+        
+        if (insertError) throw insertError;
       }
       
-      setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
+      console.log('Data successfully synced to Supabase!');
+      setMessage('✅ Data successfully synced to Supabase! Others can now see your changes.');
+      localStorage.setItem('last_sync_timestamp', new Date().toISOString());
     } catch (error) {
       console.error('Sync error:', error);
-      setMessage(`Error syncing data: ${error.message}`);
+      setError(error.message || 'Unknown error occurred');
+      setMessage(`Error syncing data. See details below.`);
     } finally {
       setSyncing(false);
     }
@@ -80,8 +114,10 @@ const SyncButton = () => {
       setIsAdmin(true);
       setShowPasswordPrompt(false);
       setMessage('Admin access granted. You can now sync data.');
+      setError(null);
     } else {
       setMessage('Incorrect password. Please try again.');
+      setError('Invalid admin password');
     }
   };
 
@@ -141,6 +177,13 @@ const SyncButton = () => {
       {message && (
         <div className="mt-2 p-2 rounded bg-blue-800/50 text-white">
           {message}
+        </div>
+      )}
+      
+      {error && (
+        <div className="mt-2 p-2 rounded bg-red-900/50 text-white">
+          <p className="font-bold">Error:</p>
+          <p className="text-sm">{error}</p>
         </div>
       )}
     </div>
