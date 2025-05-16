@@ -416,30 +416,32 @@ export const ClassScheduleProvider = ({ children }) => {
   }
   
   // Manually assign an instructor to a class
-  function manuallyAssignInstructor(day, type, time, instructorId) {
+  function manuallyAssignInstructor(day, type, time, instructorId, forceOverride = false) {
     // Check if the instructor exists
     const instructor = instructors.find(i => i.id === instructorId);
     if (!instructor && instructorId !== 'TBD') return false;
     
-    // Check if the instructor can teach this class type
-    if (instructorId !== 'TBD' && !instructor.classTypes.includes(type)) {
-      return false;
-    }
-    
-    // Check for scheduling conflicts
-    if (instructorId !== 'TBD') {
-      const hasConflict = hasSchedulingConflict(schedule, instructorId, day, time, CLASS_TYPES);
-      if (hasConflict) {
-        console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
+    if (!forceOverride) {
+      // Check if the instructor can teach this class type
+      if (instructorId !== 'TBD' && !instructor.classTypes.includes(type)) {
         return false;
       }
       
-      // Check if instructor is available at this time
-      if (instructor.availability && instructor.availability.length > 0) {
-        const isAvailable = instructor.availability.includes(`${day}-${time}`);
-        if (!isAvailable) {
-          console.warn(`Instructor ${instructorId} is not available on ${day} at ${time}`);
+      // Check for scheduling conflicts
+      if (instructorId !== 'TBD') {
+        const hasConflict = hasSchedulingConflict(schedule, instructorId, day, time, CLASS_TYPES);
+        if (hasConflict) {
+          console.warn(`Scheduling conflict detected for ${instructorId} on ${day} at ${time}`);
           return false;
+        }
+        
+        // Check if instructor is available at this time
+        if (instructor.availability && instructor.availability.length > 0) {
+          const isAvailable = instructor.availability.includes(`${day}-${time}`);
+          if (!isAvailable) {
+            console.warn(`Instructor ${instructorId} is not available on ${day} at ${time}`);
+            return false;
+          }
         }
       }
     }

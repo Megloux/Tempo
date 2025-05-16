@@ -254,6 +254,7 @@ const Dashboard = () => {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
   const [selectedInstructorId, setSelectedInstructorId] = useState('');
+  const [forceOverride, setForceOverride] = useState(false);
   
   // Get instructor name by ID
   const getInstructorName = (id) => {
@@ -274,6 +275,7 @@ const Dashboard = () => {
     setShowAssignModal(false);
     setSelectedClass(null);
     setSelectedInstructorId('');
+    setForceOverride(false); // Reset force override state
   };
   
   // Function moved to avoid duplication
@@ -285,7 +287,8 @@ const Dashboard = () => {
         selectedClass.day, 
         selectedClass.type, 
         selectedClass.time, 
-        selectedInstructorId || 'TBD'
+        selectedInstructorId || 'TBD',
+        forceOverride // Pass the force override parameter
       );
       closeAssignModal();
     }
@@ -896,6 +899,20 @@ const Dashboard = () => {
                   </option>
                 ))}
               </select>
+            </div>
+            
+            {/* Force Override Checkbox */}
+            <div className="mb-4 flex items-center">
+              <input
+                type="checkbox"
+                id="forceOverride"
+                checked={forceOverride}
+                onChange={(e) => setForceOverride(e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="forceOverride" className="ml-2 block text-sm text-white/70">
+                Force override (bypass validation checks)
+              </label>
             </div>
             
             <div className="flex flex-wrap justify-between items-center gap-4">
