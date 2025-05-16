@@ -10,12 +10,16 @@ const SupabaseDebug = () => {
   const [lastSync, setLastSync] = useState(null);
 
   // We need a reference to the ClassScheduleContext to load shared data
-  // But we'll check if it exists first since the context might not be available in some components
+  // Always call hooks at the top level - no conditionals around hook calls
   let classScheduleContext = null;
+  let contextError = null;
+  
+  // This must be unconditional
   try {
     classScheduleContext = useClassSchedule();
   } catch (e) {
-    console.log('ClassScheduleContext not available in this component');
+    contextError = e;
+    console.log('ClassScheduleContext not available in this component', e);
   }
 
   // Check connection status on mount
