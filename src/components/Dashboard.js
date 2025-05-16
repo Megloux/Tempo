@@ -5,6 +5,7 @@ import ExportToExcel from './ExportToExcel';
 import SupabaseDebug from './SupabaseDebug';
 import SyncButton from './SyncButton';
 import { toast } from 'react-toastify';
+import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
