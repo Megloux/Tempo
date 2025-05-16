@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { useClassSchedule } from '../context/ClassScheduleContext';
 
 const SupabaseDebug = () => {
   const [connectionStatus, setConnectionStatus] = useState('Checking...');
@@ -9,18 +8,8 @@ const SupabaseDebug = () => {
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
 
-  // We need a reference to the ClassScheduleContext to load shared data
-  // Always call hooks at the top level - no conditionals around hook calls
-  let classScheduleContext = null;
-  let contextError = null;
-  
-  // This must be unconditional
-  try {
-    classScheduleContext = useClassSchedule();
-  } catch (e) {
-    contextError = e;
-    console.log('ClassScheduleContext not available in this component', e);
-  }
+  // No context needed for basic functionality
+  // We'll just use localStorage directly
 
   // Check connection status on mount
   useEffect(() => {
@@ -125,11 +114,6 @@ const SupabaseDebug = () => {
 
   // Function to load shared data
   const loadSharedData = async () => {
-    if (!classScheduleContext) {
-      setError('Cannot load data: ClassScheduleContext not available');
-      return;
-    }
-    
     try {
       setLoading(true);
       setError(null);
@@ -170,29 +154,6 @@ const SupabaseDebug = () => {
       localStorage.setItem('instructors', JSON.stringify(appData.instructors || []));
       localStorage.setItem('schedule', JSON.stringify(appData.schedule || {}));
       localStorage.setItem('lockedAssignments', JSON.stringify(appData.lockedAssignments || {}));
-      
-      // If using ClassScheduleContext, update app state
-      if (classScheduleContext) {
-        // This will depend on your implementation of the updateFromExternalData method
-        if (typeof classScheduleContext.updateScheduleFromExternalData === 'function') {
-          await classScheduleContext.updateScheduleFromExternalData(appData);
-        } else {
-          // Fallback if method doesn't exist
-          console.log('updateScheduleFromExternalData method not found, using setState methods');
-          
-          if (classScheduleContext.setInstructors) {
-            classScheduleContext.setInstructors(appData.instructors || []);
-          }
-          
-          if (classScheduleContext.setSchedule) {
-            classScheduleContext.setSchedule(appData.schedule || {});
-          }
-          
-          if (classScheduleContext.setLockedAssignments) {
-            classScheduleContext.setLockedAssignments(appData.lockedAssignments || {});
-          }
-        }
-      }
       
       setError(null);
       setConnectionStatus('Data loaded successfully');
@@ -267,11 +228,9 @@ const SupabaseDebug = () => {
           {loading ? 'Loading...' : 'Load Shared Data'}
         </button>
         
-        {!classScheduleContext && (
-          <p className="text-red-300 text-sm mt-2">
-            Warning: ClassScheduleContext not available. Some functionality may be limited.
-          </p>
-        )}
+        <p className="text-yellow-300 text-sm mt-2">
+          Note: After loading data, the page will refresh to apply changes.
+        </p>
       </div>
       
       <div className="mt-4 text-xs text-gray-400">
