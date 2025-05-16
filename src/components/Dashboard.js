@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useClassSchedule } from '../context/ClassScheduleContext';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { useClassSchedule, ClassScheduleContext } from '../context/ClassScheduleContext';
+import InstructorManagement from './instructors/InstructorManagement';
+import ExportToExcel from './ExportToExcel';
+import SupabaseDebug from './SupabaseDebug';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 
@@ -1069,6 +1072,18 @@ const Dashboard = () => {
                 <p className="text-gray-500">Select an instructor to view their classes by day of week</p>
               </div>
             )}
+          </div>
+          
+          {/* Supabase Debug Panel */}
+          <div className="mt-8 mb-4">
+            <details className="bg-gray-800 rounded-lg">
+              <summary className="p-4 text-white font-bold cursor-pointer">
+                Data Sharing Diagnostics
+              </summary>
+              <div className="p-4">
+                <SupabaseDebug />
+              </div>
+            </details>
           </div>
         </div>
       </div>
