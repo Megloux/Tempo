@@ -21,96 +21,77 @@ const SyncButton = () => {
       const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
       const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
       
-      // First check the structure of the instructors table
-      const { data: tableInfo, error: tableError } = await supabase
-        .from('instructors')
-        .select('*')
+      // Create a single combined data object with everything
+      const allData = {
+        app_data: JSON.stringify({
+          instructors,
+          schedule,
+          lockedAssignments,
+          lastUpdated: new Date().toISOString()
+        }),
+        updated_at: new Date().toISOString()
+      };
+      
+      // First check if the app_data table exists
+      const { data: tableExists, error: tableCheckError } = await supabase
+        .from('app_data')
+        .select('id')
         .limit(1);
       
-      if (tableError) {
-        console.error('Error checking instructors table:', tableError);
-      }
-      
-      // Prepare instructors data - only include fields that exist in the Supabase table
-      const preparedInstructors = instructors.map(instructor => {
-        // Create a base object with only id and essential fields
-        const prepared = {
-          id: instructor.id,
-          name: instructor.name || '',
-          email: instructor.email || '',
-          phone: instructor.phone || '',
-          classTypes: Array.isArray(instructor.classTypes) ? instructor.classTypes : []
-        };
-        
-        // Add other fields if they exist in the instructor object
-        if (instructor.min_classes !== undefined) prepared.min_classes = instructor.min_classes;
-        if (instructor.max_classes !== undefined) prepared.max_classes = instructor.max_classes;
-        if (instructor.color !== undefined) prepared.color = instructor.color;
-        
-        return prepared;
-      });
-      
-      // Upload instructors to Supabase
-      const { error: instructorsError } = await supabase
-        .from('instructors')
-        .upsert(preparedInstructors, { onConflict: 'id' });
-      
-      if (instructorsError) {
-        console.error('Error details:', instructorsError);
-        throw new Error(`Error syncing instructors: ${instructorsError.message}`);
-      }
-      
-      // Create a simplified schedule object to avoid schema issues
-      const simplifiedSchedule = {
-        data: schedule,
-        updated_at: new Date().toISOString()
-      };
-      
-      try {
-        // Try to delete any existing schedule records first
-        await supabase.from('schedule').delete().neq('id', 0);
-        
-        // Insert new schedule record
-        const { error: scheduleError } = await supabase
-          .from('schedule')
-          .insert([simplifiedSchedule]);
-          
-        if (scheduleError) {
-          console.error('Schedule error details:', scheduleError);
-          throw new Error(`Error saving schedule: ${scheduleError.message}`);
+      if (tableCheckError) {
+        // Table probably doesn't exist, create it
+        console.log('Creating app_data table...');
+        try {
+          // Try to create the table (this might fail if user doesn't have permissions)
+          const { error: createError } = await supabase.rpc('create_app_data_table');
+          if (createError) {
+            console.error('Error creating table:', createError);
+          }
+        } catch (e) {
+          console.error('Error creating table:', e);
         }
-      } catch (scheduleError) {
-        console.error('Error handling schedule:', scheduleError);
-        setMessage(`Warning: Schedule sync had an error: ${scheduleError.message}. Continuing with other data...`);
-        // Continue with other operations even if schedule fails
       }
       
-      // Create a simplified locked assignments object
-      const simplifiedLocks = {
-        data: lockedAssignments,
-        updated_at: new Date().toISOString()
-      };
-      
+      // Try to save the data
       try {
-        // Try to delete any existing locked assignments records first
-        await supabase.from('locked_assignments').delete().neq('id', 0);
+        // First try to delete any existing records
+        await supabase.from('app_data').delete().neq('id', 0);
         
-        // Insert new locked assignments record
-        const { error: locksError } = await supabase
-          .from('locked_assignments')
-          .insert([simplifiedLocks]);
-          
-        if (locksError) {
-          console.error('Locks error details:', locksError);
-          throw new Error(`Error saving locked assignments: ${locksError.message}`);
+        // Then insert the new data
+        const { error: insertError } = await supabase
+          .from('app_data')
+          .insert([allData]);
+        
+        if (insertError) {
+          throw new Error(`Error saving data: ${insertError.message}`);
         }
-      } catch (locksError) {
-        console.error('Error handling locked assignments:', locksError);
-        setMessage(`Warning: Locked assignments sync had an error: ${locksError.message}. Continuing...`);
-        // Continue with other operations even if locked assignments fails
+        
+        setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
+      } catch (saveError) {
+        // If that fails, try a different approach - use a stored procedure
+        console.error('Error saving data:', saveError);
+        
+        try {
+          // Try to use a stored procedure to save the data as JSON
+          const { error: rpcError } = await supabase.rpc('save_app_data', {
+            data_json: JSON.stringify({
+              instructors,
+              schedule,
+              lockedAssignments,
+              lastUpdated: new Date().toISOString()
+            })
+          });
+          
+          if (rpcError) {
+            throw new Error(`Error saving data via RPC: ${rpcError.message}`);
+          }
+          
+          setMessage('Data successfully synced to Supabase using alternative method! Refresh the page to see changes.');
+        } catch (rpcError) {
+          console.error('Error with RPC method:', rpcError);
+          throw new Error('Could not save data to Supabase. Please check console for details.');
+        }
       }
-      
-      setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
     } catch (error) {
       console.error('Sync error:', error);
       setMessage(`Error syncing data: ${error.message}`);
