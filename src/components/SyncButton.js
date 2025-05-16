@@ -21,77 +21,51 @@ const SyncButton = () => {
       const schedule = JSON.parse(localStorage.getItem('schedule') || '{}');
       const lockedAssignments = JSON.parse(localStorage.getItem('lockedAssignments') || '{}');
       
-      // Create a single combined data object with everything
-      const allData = {
-        app_data: JSON.stringify({
-          instructors,
-          schedule,
-          lockedAssignments,
-          lastUpdated: new Date().toISOString()
-        }),
-        updated_at: new Date().toISOString()
-      };
-      
-      // First check if the app_data table exists
-      const { data: tableExists, error: tableCheckError } = await supabase
-        .from('app_data')
+      // Let's try a different approach - create a special table just for this app's data
+      // First check if our special table exists
+      const { data: tableInfo, error: tableError } = await supabase
+        .from('tempo_app_data')
         .select('id')
         .limit(1);
       
-      if (tableCheckError) {
-        // Table probably doesn't exist, create it
-        console.log('Creating app_data table...');
-        try {
-          // Try to create the table (this might fail if user doesn't have permissions)
-          const { error: createError } = await supabase.rpc('create_app_data_table');
-          if (createError) {
-            console.error('Error creating table:', createError);
-          }
-        } catch (e) {
-          console.error('Error creating table:', e);
-        }
+      if (tableError) {
+        // Table doesn't exist yet, let's create it
+        console.log('Table does not exist yet, creating it...');
+        
+        // We can't create tables directly from JavaScript, so let's store the data in localStorage
+        // and provide instructions to the user
+        localStorage.setItem('tempo_backup_data', JSON.stringify({
+          instructors,
+          schedule,
+          lockedAssignments,
+          timestamp: new Date().toISOString()
+        }));
+        
+        setMessage('First-time setup: Please create the tempo_app_data table in Supabase. ' +
+                   'Your data has been backed up to localStorage.');
+        return;
       }
       
-      // Try to save the data
-      try {
-        // First try to delete any existing records
-        await supabase.from('app_data').delete().neq('id', 0);
-        
-        // Then insert the new data
-        const { error: insertError } = await supabase
-          .from('app_data')
-          .insert([allData]);
-        
-        if (insertError) {
-          throw new Error(`Error saving data: ${insertError.message}`);
-        }
-        
-        setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
-      } catch (saveError) {
-        // If that fails, try a different approach - use a stored procedure
-        console.error('Error saving data:', saveError);
-        
-        try {
-          // Try to use a stored procedure to save the data as JSON
-          const { error: rpcError } = await supabase.rpc('save_app_data', {
-            data_json: JSON.stringify({
+      // Table exists, let's save the data
+      const { error: insertError } = await supabase
+        .from('tempo_app_data')
+        .insert([
+          {
+            data: JSON.stringify({
               instructors,
               schedule,
               lockedAssignments,
-              lastUpdated: new Date().toISOString()
+              timestamp: new Date().toISOString()
             })
-          });
-          
-          if (rpcError) {
-            throw new Error(`Error saving data via RPC: ${rpcError.message}`);
           }
-          
-          setMessage('Data successfully synced to Supabase using alternative method! Refresh the page to see changes.');
-        } catch (rpcError) {
-          console.error('Error with RPC method:', rpcError);
-          throw new Error('Could not save data to Supabase. Please check console for details.');
-        }
+        ]);
+      
+      if (insertError) {
+        console.error('Error inserting data:', insertError);
+        throw new Error(`Could not save data: ${insertError.message}`);
       }
+      
+      setMessage('Data successfully synced to Supabase! Refresh the page to see changes.');
     } catch (error) {
       console.error('Sync error:', error);
       setMessage(`Error syncing data: ${error.message}`);
