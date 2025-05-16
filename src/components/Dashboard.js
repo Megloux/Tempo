@@ -285,12 +285,16 @@ const Dashboard = () => {
   // Handle manual instructor assignment
   const handleManualAssign = () => {
     if (selectedClass && (selectedInstructorId || selectedInstructorId === 'TBD')) {
+      // Always use force override for manual assignments
+      console.log(`Manual assignment - always using force override`);
+      console.log(`Assigning ${selectedInstructorId} to ${selectedClass.day} ${selectedClass.time} ${selectedClass.type}`);
+      
       manuallyAssignInstructor(
         selectedClass.day, 
         selectedClass.type, 
         selectedClass.time, 
         selectedInstructorId || 'TBD',
-        forceOverride // Pass the force override parameter
+        true // Always force override for manual assignments
       );
       closeAssignModal();
     }
@@ -907,19 +911,7 @@ const Dashboard = () => {
               </select>
             </div>
             
-            {/* Force Override Checkbox */}
-            <div className="mb-4 flex items-center">
-              <input
-                type="checkbox"
-                id="forceOverride"
-                checked={forceOverride}
-                onChange={(e) => setForceOverride(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="forceOverride" className="ml-2 block text-sm text-white/70">
-                Force override (bypass validation checks)
-              </label>
-            </div>
+            {/* No checkbox needed - manual changes are always overrides */}
             
             <div className="flex flex-wrap justify-between items-center gap-4">
               <button
